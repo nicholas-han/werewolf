@@ -17,9 +17,14 @@ add_library(werewolf_core
     src/core/game_state.cpp
     src/flow/win_condition.cpp
     src/flow/game.cpp
+    src/io/console_decision_provider.cpp
 )
 target_include_directories(werewolf_core PUBLIC src)
 target_compile_features(werewolf_core PUBLIC cxx_std_20)
+
+# --- Command-line app (M4) ---
+add_executable(werewolf src/app/main.cpp)
+target_link_libraries(werewolf PRIVATE werewolf_core)
 
 # --- Tests (GoogleTest via FetchContent, BRD §13) ---
 option(WEREWOLF_BUILD_TESTS "Build tests" ON)
@@ -46,9 +51,13 @@ if(WEREWOLF_BUILD_TESTS)
     add_executable(sheriff_test tests/sheriff_test.cpp)
     target_link_libraries(sheriff_test PRIVATE werewolf_core GTest::gtest_main)
 
+    add_executable(console_test tests/console_test.cpp)
+    target_link_libraries(console_test PRIVATE werewolf_core GTest::gtest_main)
+
     include(GoogleTest)
     gtest_discover_tests(core_test)
     gtest_discover_tests(flow_test)
     gtest_discover_tests(roles_test)
     gtest_discover_tests(sheriff_test)
+    gtest_discover_tests(console_test)
 endif()

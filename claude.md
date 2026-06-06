@@ -280,13 +280,13 @@ werewolf/
 ├── claude.md          # 本 BRD
 ├── CMakeLists.txt
 ├── src/
-│   ├── core/          # Player, GameState, Board, 枚举(Faction/Status/DeathCause…)
-│   │   ├── roles/     # Role(轻量) + 各具体角色(Werewolf/Seer/Witch/Hunter/Civilian…)
-│   │   └── abilities/ # Ability(多态基类) + 各能力(NightKill/Inspect/DeathTriggerShoot…)
-│   ├── flow/          # PhaseFlow, 各阶段, WinCondition, 死亡结算, 警长竞选
-│   ├── io/            # DecisionProvider 接口与各实现
-│   └── app/           # main.cpp，命令行入口
-└── tests/             # GoogleTest 单测 + 整局确定性测试
+│   ├── core/          # player.h, game_state.*, board.*, enums.h
+│   │   ├── roles/     # role.*（轻量 Role + makeRole 组装能力）
+│   │   └── abilities/ # ability.h（基类+钩子）, role_abilities.*（NightKill/Inspect/WitchPotions/HunterShot）
+│   ├── flow/          # game.*（Game 编排：夜/昼/竞选/结算）, win_condition.*
+│   ├── io/            # decision_provider.h, scripted_decision_provider.h, console_decision_provider.*
+│   └── app/           # main.cpp（命令行入口）
+└── tests/             # core/flow/roles/sheriff/console_test.cpp（GoogleTest，含整局确定性测试）
 ```
 
 ## 13. 技术栈与约定
@@ -305,10 +305,12 @@ werewolf/
 
 - **已确认**：9 人预女猎板、警长竞选（§7，含自爆中断/顺延/退水/决胜轮）、屠边胜负 + 顺序结算、狼人绑票胜利、拍刀提前结算、女巫全程不可自救且每晚一瓶药、狼人自爆、死因可多记录、信息可见性原则。
 - **里程碑**：
-  1. M0 领域模型 + 枚举（Player/Role/Status/DeathCause/GameState/Board）。
-  2. M1 流程骨架 + `ScriptedDecisionProvider`：跑通「夜→昼→投票」空循环 + 胜负判定（含 §4.2 顺序结算、§4.3 绑票胜利）。
-  3. M2 角色技能：狼刀 / 查验 / 解毒 / 猎人开枪 / 自爆。
-  4. M3 警长竞选与警徽移交（§7）。
-  5. M4 `ConsoleDecisionProvider`：真人终端可玩一局。
-  6. M5（进阶）拍刀沙盒推演（§4.4）：基于**可回滚 GameState** 的提前结算。
+  1. ✅ **M0** 领域模型 + 枚举（Player/Role/Status/DeathCause/GameState/Board）。
+  2. ✅ **M1** 流程骨架 + `ScriptedDecisionProvider`：跑通「夜→昼→投票」循环 + 胜负判定（含 §4.2 顺序结算、§4.3 绑票胜利）。
+  3. ✅ **M2** 角色技能：狼刀 / 查验 / 解毒 / 猎人开枪 / 自爆（能力组件 `Ability` + 死亡触发连锁）。
+  4. ✅ **M3** 警长竞选与警徽移交（§7，含归票 1.5 票、自爆中断/顺延、忠实的「夜结算/昼公布」拆分）。
+  5. ✅ **M4** `ConsoleDecisionProvider` + `app/main.cpp`：真人终端可玩一局。
+  6. ⬜ **M5（进阶）** 拍刀沙盒推演（§4.4）：基于**可回滚 GameState** 的提前结算。
+- **当前状态**：M0–M4 已完成并合入 `main`；GoogleTest 共 43 个用例全绿；`./build/werewolf` 可玩。
+- **尚未实现（已在规则中定义，待后续里程碑）**：拍刀提前结算（§4.4，需可回滚 GameState）；「按玩家定向隐藏信息」目前控制台为单屏 moderator 模式（§11 完整实现待 per-player 通道）。
 - **后续待定义（用户提供）**：其它板子（12 人预女猎白、含守卫/丘比特等）、更多角色、屠城板、遗言细则、平票变体。
