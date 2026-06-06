@@ -206,6 +206,7 @@ void ConsoleDecisionProvider::notify(const std::string& message) {
 void ConsoleDecisionProvider::pause(const std::string& note) {
     out_ << note << " [press Enter] ";
     readLine();  // block until Enter (or EOF)
+    out_ << "\n";
 }
 
 }  // namespace ww

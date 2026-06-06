@@ -135,7 +135,11 @@ GameResult Game::resolveDeaths(std::deque<Player*> worklist) {
 }
 
 GameResult Game::announceNightDeaths() {
-    if (pendingNightDeaths_.empty()) return GameResult::Ongoing;
+    if (pendingNightDeaths_.empty()) {
+        provider_.notify("【公布昨夜死讯】平安夜，无人死亡");  // peaceful night cue
+        return GameResult::Ongoing;
+    }
+    provider_.notify("【公布昨夜死讯】");
     std::deque<Player*> worklist;
     for (int id : pendingNightDeaths_) {
         if (Player* p = state_.find(id)) worklist.push_back(p);

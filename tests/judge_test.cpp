@@ -81,6 +81,16 @@ TEST(Game, FirstNightDeathIsCuedButLaterNightsAreNot) {
     EXPECT_FALSE(anyEventContains(dp, "P3 may give last words"));  // night 2 -> not cued
 }
 
+TEST(Game, PeacefulNightIsAnnounced) {
+    // Night 1 is 空刀 -> the morning must explicitly announce the peaceful night.
+    ScriptedDecisionProvider dp;
+    dp.nightKills = {std::nullopt, 2, 3};  // peaceful night 1, then push to a wolf win
+
+    Game game(killAll("peace", {{RoleKind::Werewolf, 1}, {RoleKind::Civilian, 3}}), dp);
+    game.run();
+    EXPECT_TRUE(anyEventContains(dp, "平安夜"));
+}
+
 TEST(Game, DaytimeExileIsCuedForLastWords) {
     // 1 wolf + 3 civ. Day-1 exile of civ2 (daytime, non-self-destruct) -> last words.
     ScriptedDecisionProvider dp;
