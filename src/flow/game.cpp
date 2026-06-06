@@ -110,6 +110,7 @@ GameResult Game::resolveDeaths(std::deque<Player*> worklist) {
         announceDeath(*dead);
         if (hasLastWords(*dead)) {  // ② §5.3 last-words cue
             provider_.notify("  -> " + dead->name() + " may give last words (遗言)");
+            provider_.pause("请 " + dead->name() + " 发表遗言");  // ⑤ pacing for last words
         }
         maybeTransferBadge(*dead);  // §7.6: transfer before death-triggered skills
 
@@ -432,6 +433,7 @@ GameResult Game::runDay() {
 
     // 发言顺序 cue (③ §7.1.2): single death -> 死左/死右; multi / peaceful -> from sheriff.
     cueSpeechOrder(nightDeathCount, singleDeadSeat);
+    provider_.notify("【发言阶段】请依次发言");
 
     // Daytime self-destruct during 发言 (§2): day ends immediately, no vote.
     if (board_.config.blownUpEnabled) {
@@ -444,6 +446,7 @@ GameResult Game::runDay() {
     }
 
     // Exile vote (§6 + §7.1 归票).
+    provider_.notify("【发言结束，进入放逐投票】");
     if (std::optional<int> exiled = resolveExile()) {
         return settleImmediate({{*exiled, DeathCause::Exiled}});
     }
