@@ -77,8 +77,8 @@ TEST(Game, FirstNightDeathIsCuedButLaterNightsAreNot) {
     Game game(killAll("ln", {{RoleKind::Werewolf, 1}, {RoleKind::Civilian, 4}}), dp);
     game.run();
 
-    EXPECT_TRUE(anyEventContains(dp, "P2 may give last words"));   // first night -> cued
-    EXPECT_FALSE(anyEventContains(dp, "P3 may give last words"));  // night 2 -> not cued
+    EXPECT_TRUE(anyEventContains(dp, "P2 可发表遗言"));   // first night -> cued
+    EXPECT_FALSE(anyEventContains(dp, "P3 可发表遗言"));  // night 2 -> not cued
 }
 
 TEST(Game, NightRolesAreCuedOpenAndClose) {
@@ -113,5 +113,5 @@ TEST(Game, DaytimeExileIsCuedForLastWords) {
     Game game(killAll("ex", {{RoleKind::Werewolf, 1}, {RoleKind::Civilian, 3}}), dp);
     game.run();
 
-    EXPECT_TRUE(anyEventContains(dp, "P2 may give last words"));
+    EXPECT_TRUE(anyEventContains(dp, "P2 可发表遗言"));
 }

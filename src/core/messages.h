@@ -1,0 +1,88 @@
+#pragma once
+
+#include <string>
+
+#include "core/enums.h"
+
+// Centralised moderator-facing text (BRD M5). Single source of truth for the
+// Chinese judge narration so wording lives in one place (and tests key on the
+// same functions instead of brittle literals). Decision prompts that are purely
+// console-local live in ConsoleDecisionProvider; everything the engine narrates
+// through notify() comes from here.
+namespace ww::txt {
+
+inline std::string role(RoleKind r) {
+    switch (r) {
+        case RoleKind::Werewolf: return "狼人";
+        case RoleKind::Seer: return "预言家";
+        case RoleKind::Witch: return "女巫";
+        case RoleKind::Hunter: return "猎人";
+        case RoleKind::Civilian: return "平民";
+    }
+    return "?";
+}
+
+inline std::string cause(DeathCause c) {
+    switch (c) {
+        case DeathCause::Killed: return "狼杀";
+        case DeathCause::Poisoned: return "毒杀";
+        case DeathCause::Exiled: return "放逐";
+        case DeathCause::Shot: return "枪杀";
+        case DeathCause::BlownUp: return "自爆";
+    }
+    return "?";
+}
+
+// --- Phase banners & night narration ---
+inline std::string nightBanner(int day) {
+    return "=== 第 " + std::to_string(day) + " 夜 ===  天黑请闭眼";
+}
+inline std::string dayBanner(int day) {
+    return "=== 第 " + std::to_string(day) + " 天 ===  天亮了";
+}
+inline std::string openEyes(const std::string& roleName) { return roleName + "请睁眼"; }
+inline std::string closeEyes(const std::string& roleName) { return roleName + "请闭眼"; }
+
+// --- Death announcement & last words ---
+inline std::string announceHeader() { return "【公布昨夜死讯】"; }
+inline std::string peacefulNight() { return "【公布昨夜死讯】平安夜，无人死亡"; }
+inline std::string out(const std::string& name, const std::string& causes) {
+    return name + " 出局（" + causes + "）";
+}
+inline std::string lastWordsCue(const std::string& name) { return "  → " + name + " 可发表遗言"; }
+inline std::string lastWordsPause(const std::string& name) { return "请 " + name + " 发表遗言"; }
+inline std::string announcePause() { return "准备公布昨夜情况"; }
+
+// --- Day / speech / vote ---
+inline std::string speechPhase() { return "【发言阶段】请依次发言"; }
+inline std::string speakingOrder(const std::string& names) { return "发言顺序：" + names; }
+inline std::string voteTransition() { return "【发言结束，进入放逐投票】"; }
+inline std::string voteHeader() { return "【放逐投票】"; }
+inline std::string firstRoundVotes(const std::string& body) { return "  首轮票数：" + body; }
+inline std::string runoffVotes(const std::string& body) { return "  决胜轮票数：" + body; }
+inline std::string exiled(const std::string& name) {
+    return "  放逐结果：" + name + " 票数最高，被放逐";
+}
+inline std::string exiledRunoff(const std::string& name) { return "  放逐结果：" + name + " 被放逐"; }
+inline std::string firstRoundTie(const std::string& names) {
+    return "  首轮平票（" + names + "）→ 进入决胜轮";
+}
+inline std::string noVotesNoExile() { return "  无人得票 → 本轮无人出局"; }
+inline std::string runoffStillTie() { return "  决胜轮仍平票 → 本轮无人出局"; }
+
+// --- Sheriff election (§7) ---
+inline std::string electionBegin() { return "【警长竞选】开始"; }
+inline std::string electionDeferred() { return "【警长竞选】顺延，仅投票（无发言）"; }
+inline std::string becomesSheriff(const std::string& name) { return name + " 当选警长"; }
+inline std::string noSheriffNobodyRan() { return "无人上警，本局无警长"; }
+inline std::string badgeLostEveryoneRan() { return "全员上警，警徽流失，本局无警长"; }
+inline std::string noSheriffAllWithdrew() { return "全员退水，本局无警长"; }
+inline std::string badgeLostTie() { return "竞选平票，警徽流失，本局无警长"; }
+inline std::string badgeTransferred(const std::string& name) { return "警徽移交给 " + name; }
+inline std::string badgeDestroyed() { return "警徽被撕毁，本局不再有警长"; }
+
+// --- Result ---
+inline std::string resultTown() { return "游戏结束：好人胜利"; }
+inline std::string resultWolf() { return "游戏结束：狼人胜利"; }
+
+}  // namespace ww::txt

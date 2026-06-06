@@ -6,6 +6,7 @@
 
 #include "core/board.h"
 #include "core/enums.h"
+#include "core/messages.h"
 #include "flow/game.h"
 #include "flow/win_condition.h"
 #include "io/console_decision_provider.h"
@@ -23,7 +24,7 @@ const std::vector<RoleKind> kRoleMenu = {RoleKind::Werewolf, RoleKind::Seer, Rol
 // Returns std::nullopt to fall back to the default roster-order layout.
 std::optional<std::vector<RoleKind>> promptSetup(const Board& board, std::istream& in,
                                                  std::ostream& out) {
-    out << "Enter dealt roles per seat manually? (y = enter, n = use default layout)\n> ";
+    out << "是否手动录入每个座位的真实身份？（y=录入，n=用默认布局）\n> ";
     std::string line;
     if (!std::getline(in, line)) return std::nullopt;
     if (line.empty() || (line[0] != 'y' && line[0] != 'Y')) return std::nullopt;
@@ -34,13 +35,13 @@ std::optional<std::vector<RoleKind>> promptSetup(const Board& board, std::istrea
 
     const int total = board.totalPlayers();
     std::vector<RoleKind> seatRoles;
-    out << "Role codes: 1)Werewolf 2)Seer 3)Witch 4)Hunter 5)Civilian\n";
+    out << "身份编号：1)狼人 2)预言家 3)女巫 4)猎人 5)平民\n";
 
     for (int seat = 1; seat <= total; ++seat) {
         for (;;) {
-            out << "  seat " << seat << " role? remaining:";
+            out << "  座位 " << seat << " 的身份？剩余:";
             for (RoleKind r : kRoleMenu) {
-                if (pool[r] > 0) out << " " << to_string(r) << "x" << pool[r];
+                if (pool[r] > 0) out << " " << txt::role(r) << "x" << pool[r];
             }
             out << "\n  > ";
             if (!std::getline(in, line)) return std::nullopt;  // EOF -> abandon manual setup
@@ -48,16 +49,16 @@ std::optional<std::vector<RoleKind>> promptSetup(const Board& board, std::istrea
             try {
                 code = std::stoi(line);
             } catch (...) {
-                out << "  ! enter 1-5\n";
+                out << "  ！请输入 1-5\n";
                 continue;
             }
             if (code < 1 || code > 5) {
-                out << "  ! enter 1-5\n";
+                out << "  ！请输入 1-5\n";
                 continue;
             }
             RoleKind picked = kRoleMenu[code - 1];
             if (pool[picked] <= 0) {
-                out << "  ! none of that role left\n";
+                out << "  ！该身份已分配完\n";
                 continue;
             }
             pool[picked] -= 1;
@@ -74,22 +75,23 @@ int main() {
     using namespace ww;
 
     Board board = makeBoard9_SeerWitchHunter();
-    std::cout << "=== Werewolf: 9-player Seer/Witch/Hunter (moderator console) ===\n";
+    std::cout << "=== 狼人杀：9 人预女猎（法官控制台）===\n";
 
     std::optional<std::vector<RoleKind>> seatRoles = promptSetup(board, std::cin, std::cout);
 
     ConsoleDecisionProvider provider(std::cin, std::cout);
     Game game(board, provider, seatRoles);
 
-    std::cout << "[Moderator view] seat -> role (you, the judge, see everything; BRD §11):\n";
+    std::cout << "【法官视角】座位 -> 身份（你作为法官可见全部信息，BRD §11）:\n";
     for (const Player& p : game.state().players) {
-        std::cout << "  seat " << p.seat() << " (" << p.name() << "): " << p.role().name() << "\n";
+        std::cout << "  座位 " << p.seat() << " (" << p.name() << "): " << txt::role(p.role().kind())
+                  << "\n";
     }
     std::cout << "--------------------------------------------\n";
 
     GameResult result = game.run();
 
     std::cout << "============================================\n";
-    std::cout << "Game over: " << to_string(result) << "\n";
+    std::cout << (result == GameResult::TownWins ? txt::resultTown() : txt::resultWolf()) << "\n";
     return 0;
 }

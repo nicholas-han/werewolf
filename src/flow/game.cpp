@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "core/abilities/ability.h"
+#include "core/messages.h"
 #include "core/player.h"
 #include "core/roles/role.h"
 #include "flow/last_words.h"
@@ -64,9 +65,9 @@ void Game::announceDeath(const Player& p) {
     std::string causes;
     for (DeathCause c : p.deathCauses()) {
         if (!causes.empty()) causes += "+";
-        causes += std::string(to_string(c));
+        causes += txt::cause(c);
     }
-    provider_.notify(p.name() + " is out (" + causes + ")");
+    provider_.notify(txt::out(p.name(), causes));
 }
 
 std::vector<Player*> Game::recordDeaths(const std::vector<PendingDeath>& batch) {
@@ -93,10 +94,10 @@ void Game::maybeTransferBadge(Player& dead) {
     if (newHolder != nullptr && newHolder->isAlive()) {
         state_.sheriffId = newHolder->id();
         newHolder->isSheriff = true;
-        provider_.notify("Badge transferred to " + newHolder->name());
+        provider_.notify(txt::badgeTransferred(newHolder->name()));
     } else {
         state_.sheriffId.reset();  // torn up (撕毁) -> no sheriff for the rest (§7.6)
-        provider_.notify("Badge destroyed");
+        provider_.notify(txt::badgeDestroyed());
     }
 }
 
@@ -110,8 +111,8 @@ GameResult Game::resolveDeaths(std::deque<Player*> worklist) {
 
         announceDeath(*dead);
         if (hasLastWords(*dead)) {  // ② §5.3 last-words cue
-            provider_.notify("  -> " + dead->name() + " may give last words (遗言)");
-            provider_.pause("请 " + dead->name() + " 发表遗言");  // ⑤ pacing for last words
+            provider_.notify(txt::lastWordsCue(dead->name()));
+            provider_.pause(txt::lastWordsPause(dead->name()));  // ⑤ pacing for last words
         }
         maybeTransferBadge(*dead);  // §7.6: transfer before death-triggered skills
 
@@ -138,10 +139,10 @@ GameResult Game::resolveDeaths(std::deque<Player*> worklist) {
 
 GameResult Game::announceNightDeaths() {
     if (pendingNightDeaths_.empty()) {
-        provider_.notify("【公布昨夜死讯】平安夜，无人死亡");  // peaceful night cue
+        provider_.notify(txt::peacefulNight());  // peaceful night cue
         return GameResult::Ongoing;
     }
-    provider_.notify("【公布昨夜死讯】");
+    provider_.notify(txt::announceHeader());
     std::deque<Player*> worklist;
     for (int id : pendingNightDeaths_) {
         if (Player* p = state_.find(id)) worklist.push_back(p);
@@ -157,17 +158,17 @@ GameResult Game::settleImmediate(std::vector<PendingDeath> batch) {
 }
 
 std::string Game::moderatorStatus() const {
-    std::string s = "[Status] day " + std::to_string(state_.day) + " | alive:";
+    std::string s = "【状态】第 " + std::to_string(state_.day) + " 天 | 存活:";
     for (const Player& p : state_.players) {
         if (!p.isAlive()) continue;
-        s += " " + p.name() + "(" + p.role().name();
-        if (state_.sheriffId && *state_.sheriffId == p.id()) s += ",SHERIFF";
+        s += " " + p.name() + "(" + txt::role(p.role().kind());
+        if (state_.sheriffId && *state_.sheriffId == p.id()) s += ",警长";
         s += ")";
     }
-    s += " | witch antidote=";
-    s += state_.witchAntidoteAvailable ? "Y" : "N";
-    s += " poison=";
-    s += state_.witchPoisonAvailable ? "Y" : "N";
+    s += " | 女巫解药=";
+    s += state_.witchAntidoteAvailable ? "有" : "无";
+    s += " 毒药=";
+    s += state_.witchPoisonAvailable ? "有" : "无";
     return s;
 }
 
@@ -190,16 +191,17 @@ void Game::cueSpeechOrder(int nightDeathCount, int singleDeadSeat) {
         if (p && p->isAlive()) order.push_back(seat);
     }
 
-    std::string s = "[Day] speaking order:";
+    std::string names;
     for (int seatId : order) {
         const Player* p = state_.find(seatId);
-        s += " " + (p ? p->name() : ("#" + std::to_string(seatId)));
+        if (!names.empty()) names += " → ";
+        names += p ? p->name() : ("#" + std::to_string(seatId));
     }
-    provider_.notify(s);
+    provider_.notify(txt::speakingOrder(names));
 }
 
 GameResult Game::runNight() {
-    provider_.notify("=== Night " + std::to_string(state_.day) + " ===  天黑请闭眼");
+    provider_.notify(txt::nightBanner(state_.day));
 
     for (Player& p : state_.players) {
         p.guardedTonight = false;
@@ -228,13 +230,13 @@ GameResult Game::runNight() {
     for (const Act& a : acts) {
         const std::string cue = a.actor->nightCue();
         if (cue != openCue) {
-            if (!openCue.empty()) provider_.notify(openCue + "请闭眼");
-            provider_.notify(cue + "请睁眼");
+            if (!openCue.empty()) provider_.notify(txt::closeEyes(openCue));
+            provider_.notify(txt::openEyes(cue));
             openCue = cue;
         }
         a.actor->actAtNight(ctx, state_, *a.owner, provider_);
     }
-    if (!openCue.empty()) provider_.notify(openCue + "请闭眼");
+    if (!openCue.empty()) provider_.notify(txt::closeEyes(openCue));
 
     std::vector<PendingDeath> batch;
     if (ctx.wolfTarget && ctx.savedTarget != ctx.wolfTarget) {
@@ -265,14 +267,13 @@ void Game::electSheriff(int playerId) {
     state_.sheriffId = playerId;
     if (Player* p = state_.find(playerId)) {
         p->isSheriff = true;
-        provider_.notify(p->name() + " becomes sheriff");
+        provider_.notify(txt::becomesSheriff(p->name()));
     }
 }
 
 Game::ElectionOutcome Game::runSheriffElection() {
     const bool deferred = electionDeferred_;
-    provider_.notify(deferred ? "Sheriff election (deferred, vote only)"
-                              : "Sheriff election begins");
+    provider_.notify(deferred ? txt::electionDeferred() : txt::electionBegin());
 
     const std::vector<int> alive = aliveIds();
 
@@ -285,13 +286,13 @@ Game::ElectionOutcome Game::runSheriffElection() {
     if (candidates.empty()) {  // §7.3: nobody ran
         electionResolved_ = true;
         electionDeferred_ = false;
-        provider_.notify("No sheriff (nobody ran)");
+        provider_.notify(txt::noSheriffNobodyRan());
         return {GameResult::Ongoing, false};
     }
     if (candidates.size() == alive.size()) {  // §7.3: everyone ran -> badge lost
         electionResolved_ = true;
         electionDeferred_ = false;
-        provider_.notify("Badge lost (everyone ran)");
+        provider_.notify(txt::badgeLostEveryoneRan());
         return {GameResult::Ongoing, false};
     }
 
@@ -329,7 +330,7 @@ Game::ElectionOutcome Game::runSheriffElection() {
     electionDeferred_ = false;
 
     if (remaining.empty()) {  // §7.3: all withdrew
-        provider_.notify("No sheriff (all withdrew)");
+        provider_.notify(txt::noSheriffAllWithdrew());
         return {GameResult::Ongoing, false};
     }
     if (remaining.size() == 1) {  // §7.2-6: auto-elected
@@ -368,7 +369,7 @@ Game::ElectionOutcome Game::runSheriffElection() {
         return {GameResult::Ongoing, false};
     }
 
-    provider_.notify("Badge lost (election tie)");
+    provider_.notify(txt::badgeLostTie());
     return {GameResult::Ongoing, false};
 }
 
@@ -400,7 +401,7 @@ std::optional<int> Game::resolveExile() {
         return s;
     };
 
-    provider_.notify("【放逐投票】");
+    provider_.notify(txt::voteHeader());
 
     // Round 1: the sheriff votes via 归票 (1.5 single / 1.0 PK), others weight 1 (§7.1).
     std::map<int, double> counts;
@@ -415,22 +416,22 @@ std::optional<int> Game::resolveExile() {
             if (pick && contains(alive, *pick)) counts[*pick] += 1.0;
         }
     }
-    provider_.notify("  首轮票数: " + fmtVotes(counts));
+    provider_.notify(txt::firstRoundVotes(fmtVotes(counts)));
     std::vector<int> leaders = topCandidates(counts);
 
     if (leaders.empty()) {
-        provider_.notify("  无人得票 -> 本轮无人出局");
+        provider_.notify(txt::noVotesNoExile());
         return std::nullopt;
     }
     if (leaders.size() == 1) {
         const Player* p = state_.find(leaders.front());
-        provider_.notify("  放逐结果: " + std::string(p ? p->name() : "?") + " 票数最高，被放逐");
+        provider_.notify(txt::exiled(p ? p->name() : "?"));
         return leaders.front();
     }
 
     // Runoff (§6): everyone except the tied candidates re-votes; the badge counts
     // 1 here (§7.1), i.e. the sheriff is just another voter via chooseVote.
-    provider_.notify("  首轮平票 (" + names(leaders) + ") -> 进入决胜轮");
+    provider_.notify(txt::firstRoundTie(names(leaders)));
     std::vector<int> runoffVoters;
     for (int id : alive) {
         if (!contains(leaders, id)) runoffVoters.push_back(id);
@@ -440,20 +441,20 @@ std::optional<int> Game::resolveExile() {
         std::optional<int> pick = provider_.chooseVote(state_, v, leaders);
         if (pick && contains(leaders, *pick)) counts2[*pick] += 1.0;
     }
-    provider_.notify("  决胜轮票数: " + fmtVotes(counts2));
+    provider_.notify(txt::runoffVotes(fmtVotes(counts2)));
     std::vector<int> leaders2 = topCandidates(counts2);
 
     if (leaders2.size() == 1) {
         const Player* p = state_.find(leaders2.front());
-        provider_.notify("  放逐结果: " + std::string(p ? p->name() : "?") + " 被放逐");
+        provider_.notify(txt::exiledRunoff(p ? p->name() : "?"));
         return leaders2.front();
     }
-    provider_.notify("  决胜轮仍平票 -> 本轮无人出局");
+    provider_.notify(txt::runoffStillTie());
     return std::nullopt;
 }
 
 GameResult Game::runDay() {
-    provider_.notify("=== Day " + std::to_string(state_.day) + " ===  天亮了");
+    provider_.notify(txt::dayBanner(state_.day));
     provider_.notify(moderatorStatus());  // ④ status board
 
     // Sheriff election on day 1 (or the deferred day-2 vote), BEFORE 公布死讯 (§7.2).
@@ -473,12 +474,12 @@ GameResult Game::runDay() {
     }
 
     // 公布死讯 + 夜死触发（猎人翻枪）(§5.3 / §2).
-    provider_.pause("准备公布昨夜情况");  // ⑤ pacing
+    provider_.pause(txt::announcePause());  // ⑤ pacing
     if (GameResult r = announceNightDeaths(); r != GameResult::Ongoing) return r;
 
     // 发言顺序 cue (③ §7.1.2): single death -> 死左/死右; multi / peaceful -> from sheriff.
     cueSpeechOrder(nightDeathCount, singleDeadSeat);
-    provider_.notify("【发言阶段】请依次发言");
+    provider_.notify(txt::speechPhase());
 
     // Daytime self-destruct during 发言 (§2): day ends immediately, no vote.
     if (board_.config.blownUpEnabled) {
@@ -491,7 +492,7 @@ GameResult Game::runDay() {
     }
 
     // Exile vote (§6 + §7.1 归票).
-    provider_.notify("【发言结束，进入放逐投票】");
+    provider_.notify(txt::voteTransition());
     if (std::optional<int> exiled = resolveExile()) {
         return settleImmediate({{*exiled, DeathCause::Exiled}});
     }
@@ -503,13 +504,13 @@ GameResult Game::run() {
     for (int cycle = 0; cycle < kMaxCycles; ++cycle) {
         state_.phase = Phase::Night;
         if (GameResult r = runNight(); r != GameResult::Ongoing) {
-            provider_.notify(std::string("Result: ") + std::string(to_string(r)));
+            provider_.notify(r == GameResult::TownWins ? txt::resultTown() : txt::resultWolf());
             return r;
         }
 
         state_.phase = Phase::Day;
         if (GameResult r = runDay(); r != GameResult::Ongoing) {
-            provider_.notify(std::string("Result: ") + std::string(to_string(r)));
+            provider_.notify(r == GameResult::TownWins ? txt::resultTown() : txt::resultWolf());
             return r;
         }
 

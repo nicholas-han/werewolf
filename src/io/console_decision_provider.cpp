@@ -44,7 +44,7 @@ std::string ConsoleDecisionProvider::nameOf(const GameState& state, int id) {
 
 void ConsoleDecisionProvider::listCandidates(const GameState& state,
                                              const std::vector<int>& candidates) {
-    out_ << "  options:";
+    out_ << "  可选:";
     for (int id : candidates) out_ << " " << id << "(" << nameOf(state, id) << ")";
     out_ << "\n";
 }
@@ -59,7 +59,7 @@ std::optional<int> ConsoleDecisionProvider::promptOptional(const std::string& pr
                                                            const GameState& state,
                                                            const std::vector<int>& candidates) {
     for (;;) {
-        out_ << prompt << " (blank = none)\n";
+        out_ << prompt << "（直接回车=不选）\n";
         listCandidates(state, candidates);
         out_ << "> ";
         std::optional<std::string> line = readLine();
@@ -67,11 +67,11 @@ std::optional<int> ConsoleDecisionProvider::promptOptional(const std::string& pr
         if (line->empty()) return std::nullopt;
         int v = 0;
         if (!parseInt(*line, v)) {
-            out_ << "  ! not a number, try again\n";
+            out_ << "  ！请输入数字\n";
             continue;
         }
         if (std::find(candidates.begin(), candidates.end(), v) == candidates.end()) {
-            out_ << "  ! not a valid option, try again\n";
+            out_ << "  ！不是有效选项，请重输\n";
             continue;
         }
         return v;
@@ -87,13 +87,13 @@ int ConsoleDecisionProvider::promptRequired(const std::string& prompt, const Gam
         std::optional<std::string> line = readLine();
         if (!line) return candidates.empty() ? -1 : candidates.front();  // EOF fallback
         if (line->empty()) {
-            out_ << "  ! a choice is required\n";
+            out_ << "  ！必须选择一个\n";
             continue;
         }
         int v = 0;
         if (!parseInt(*line, v) ||
             std::find(candidates.begin(), candidates.end(), v) == candidates.end()) {
-            out_ << "  ! not a valid option, try again\n";
+            out_ << "  ！不是有效选项，请重输\n";
             continue;
         }
         return v;
@@ -102,101 +102,104 @@ int ConsoleDecisionProvider::promptRequired(const std::string& prompt, const Gam
 
 bool ConsoleDecisionProvider::promptYesNo(const std::string& prompt) {
     for (;;) {
-        out_ << prompt << " (y/n)\n> ";
+        out_ << prompt << "（y/n）\n> ";
         std::optional<std::string> line = readLine();
         if (!line) return false;  // EOF -> no
         if (line->empty()) continue;
         char c = static_cast<char>(std::tolower((*line)[0]));
         if (c == 'y') return true;
         if (c == 'n') return false;
-        out_ << "  ! please answer y or n\n";
+        out_ << "  ！请输入 y 或 n\n";
     }
 }
 
 std::optional<int> ConsoleDecisionProvider::chooseNightKill(const GameState& state,
                                                             const std::vector<int>& candidates) {
-    return promptOptional("[Night] Werewolves, choose a kill target", state, candidates);
+    return promptOptional("【夜晚】狼人请选择刀杀目标", state, candidates);
 }
 
 std::optional<int> ConsoleDecisionProvider::chooseVote(const GameState& state, int voterId,
                                                        const std::vector<int>& candidates) {
-    return promptOptional("[Day] " + nameOf(state, voterId) + ", vote to exile", state, candidates);
+    return promptOptional("【白天】" + nameOf(state, voterId) + " 请投票放逐", state, candidates);
 }
 
 std::optional<int> ConsoleDecisionProvider::chooseInspect(const GameState& state, int seerId,
                                                           const std::vector<int>& candidates) {
-    return promptOptional("[Night] Seer " + nameOf(state, seerId) + ", inspect whom", state,
-                          candidates);
+    return promptOptional("【夜晚】预言家 " + nameOf(state, seerId) + " 请查验", state, candidates);
 }
 
 bool ConsoleDecisionProvider::chooseWitchSave(const GameState& state, int witchId, int knifedId) {
-    return promptYesNo("[Night] Witch " + nameOf(state, witchId) + ", " + nameOf(state, knifedId) +
-                       " was knifed. Use the antidote?");
+    return promptYesNo("【夜晚】女巫 " + nameOf(state, witchId) + "，今晚 " + nameOf(state, knifedId) +
+                       " 被刀，是否使用解药？");
 }
 
 std::optional<int> ConsoleDecisionProvider::chooseWitchPoison(const GameState& state, int witchId,
                                                               const std::vector<int>& candidates) {
-    return promptOptional("[Night] Witch " + nameOf(state, witchId) + ", poison whom", state,
+    return promptOptional("【夜晚】女巫 " + nameOf(state, witchId) + " 是否使用毒药（毒谁）", state,
                           candidates);
 }
 
 std::optional<int> ConsoleDecisionProvider::chooseHunterShot(const GameState& state, int hunterId,
                                                              const std::vector<int>& candidates) {
-    return promptOptional("[Death] Hunter " + nameOf(state, hunterId) + ", shoot whom", state,
+    return promptOptional("【死亡结算】猎人 " + nameOf(state, hunterId) + " 是否开枪带人", state,
                           candidates);
 }
 
 std::optional<int> ConsoleDecisionProvider::chooseSelfDestruct(const GameState& state,
                                                                const std::vector<int>& wolfIds) {
-    return promptOptional("[Day] Any wolf self-destruct? Enter the wolf's seat", state, wolfIds);
+    // Self-destruct is a spontaneous *player* declaration, not a daily moderator
+    // question. Until a player/declaration channel exists, the console never
+    // offers it (the engine logic remains, exercised by scripted tests).
+    (void)state;
+    (void)wolfIds;
+    return std::nullopt;
 }
 
 bool ConsoleDecisionProvider::chooseRunForSheriff(const GameState& state, int playerId) {
-    return promptYesNo("[Election] " + nameOf(state, playerId) + ", run for sheriff?");
+    return promptYesNo("【竞选】" + nameOf(state, playerId) + " 是否上警？");
 }
 
 bool ConsoleDecisionProvider::chooseWithdraw(const GameState& state, int candidateId) {
-    return promptYesNo("[Election] " + nameOf(state, candidateId) + ", withdraw from the race?");
+    return promptYesNo("【竞选】" + nameOf(state, candidateId) + " 是否退水？");
 }
 
 std::optional<int> ConsoleDecisionProvider::chooseSheriffVote(const GameState& state, int voterId,
                                                               const std::vector<int>& candidates) {
-    return promptOptional("[Election] " + nameOf(state, voterId) + ", vote for sheriff", state,
-                          candidates);
+    return promptOptional("【竞选】" + nameOf(state, voterId) + " 投票选警长", state, candidates);
 }
 
 SheriffBallot ConsoleDecisionProvider::chooseSheriffExileBallot(const GameState& state,
                                                                 int sheriffId,
                                                                 const std::vector<int>& candidates) {
-    out_ << "[Day] Sheriff " << nameOf(state, sheriffId) << " 归票.\n";
-    if (promptYesNo("  归单人 (badge = 1.5, must vote)? (n = 归多人PK, badge = 1, may abstain)")) {
-        int target = promptRequired("  归单人 target", state, candidates);
+    out_ << "【白天】警长 " << nameOf(state, sheriffId) << " 归票。\n";
+    if (promptYesNo("  归单人（警徽 1.5 票，必须投票）？（n = 归多人PK，警徽 1 票，可弃票）")) {
+        int target = promptRequired("  归单人 投给谁", state, candidates);
         return SheriffBallot{true, target};
     }
-    std::optional<int> target = promptOptional("  归多人PK vote (blank = abstain)", state, candidates);
+    std::optional<int> target = promptOptional("  归多人PK 投给谁", state, candidates);
     return SheriffBallot{false, target};
 }
 
 std::optional<int> ConsoleDecisionProvider::chooseBadgeTransfer(const GameState& state,
                                                                 int sheriffId,
                                                                 const std::vector<int>& candidates) {
-    out_ << "[Death] Sheriff " << nameOf(state, sheriffId) << " is out.\n";
-    return promptOptional("  Transfer the badge to whom (blank = tear it up)", state, candidates);
+    out_ << "【死亡结算】警长 " << nameOf(state, sheriffId) << " 出局。\n";
+    return promptOptional("  警徽移交给谁（直接回车=撕毁警徽）", state, candidates);
 }
 
 SpeechDirection ConsoleDecisionProvider::chooseSpeechDirection(const GameState& state,
                                                                int sheriffId, int anchorSeat,
                                                                bool singleDeath) {
-    out_ << "[Day] Sheriff " << nameOf(state, sheriffId) << " sets the speaking order.\n";
-    out_ << "  start from " << (singleDeath ? "the dead player's" : "the sheriff's")
-         << " seat " << anchorSeat << "; direction L = toward higher seats, R = toward lower\n";
-    return promptYesNo("  go Left (higher seats)? (n = Right)") ? SpeechDirection::Left
-                                                                : SpeechDirection::Right;
+    out_ << "【白天】警长 " << nameOf(state, sheriffId) << " 决定发言顺序。\n";
+    out_ << "  从" << (singleDeath ? "死者" : "警长") << "座位 " << anchorSeat
+         << " 开始；方向 L=座位号增大，R=座位号减小\n";
+    return promptYesNo("  向左（座位号增大）？（n = 向右）") ? SpeechDirection::Left
+                                                            : SpeechDirection::Right;
 }
 
 void ConsoleDecisionProvider::onInspectResult(int seerId, int targetId, bool isWolf) {
-    out_ << "[Private->Seer #" << seerId << "] #" << targetId << " is "
-         << (isWolf ? "a WEREWOLF (查杀)" : "GOOD (金水)") << "\n";
+    out_ << "【私密→预言家 #" << seerId << "】#" << targetId << " 是 "
+         << (isWolf ? "狼人（查杀）" : "好人（金水）") << "\n";
 }
 
 void ConsoleDecisionProvider::notify(const std::string& message) {
@@ -204,7 +207,7 @@ void ConsoleDecisionProvider::notify(const std::string& message) {
 }
 
 void ConsoleDecisionProvider::pause(const std::string& note) {
-    out_ << note << " [press Enter] ";
+    out_ << note << "（按回车继续）";
     readLine();  // block until Enter (or EOF)
     out_ << "\n";
 }

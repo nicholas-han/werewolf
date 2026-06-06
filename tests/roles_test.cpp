@@ -12,6 +12,7 @@
 #include "core/game_state.h"
 #include "core/player.h"
 #include "flow/game.h"
+#include "core/messages.h"
 #include "io/scripted_decision_provider.h"
 
 using namespace ww;
@@ -207,7 +208,7 @@ TEST(Game, SelfDestructEndsDayWithNoVote) {
 
     // Day 1 went straight to the self-destruct, before any exile vote (§2/§5.3):
     // the BlownUp death must precede the first "【放逐投票】" header (day 2's).
-    auto blown = std::find(dp.events.begin(), dp.events.end(), "P1 is out (BlownUp)");
+    auto blown = std::find(dp.events.begin(), dp.events.end(), txt::out("P1", txt::cause(DeathCause::BlownUp)));
     ASSERT_NE(blown, dp.events.end());
     auto firstVote = std::find(dp.events.begin(), dp.events.end(), "【放逐投票】");
     EXPECT_TRUE(firstVote == dp.events.end() ||
