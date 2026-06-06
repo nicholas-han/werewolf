@@ -14,6 +14,8 @@ add_library(werewolf_core
     src/core/roles/role.cpp
     src/core/board.cpp
     src/core/game_state.cpp
+    src/flow/win_condition.cpp
+    src/flow/game.cpp
 )
 target_include_directories(werewolf_core PUBLIC src)
 target_compile_features(werewolf_core PUBLIC cxx_std_20)
@@ -34,6 +36,10 @@ if(WEREWOLF_BUILD_TESTS)
     add_executable(core_test tests/core_test.cpp)
     target_link_libraries(core_test PRIVATE werewolf_core GTest::gtest_main)
 
+    add_executable(flow_test tests/flow_test.cpp)
+    target_link_libraries(flow_test PRIVATE werewolf_core GTest::gtest_main)
+
     include(GoogleTest)
     gtest_discover_tests(core_test)
+    gtest_discover_tests(flow_test)
 endif()
