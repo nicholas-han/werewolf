@@ -1,5 +1,6 @@
 #pragma once
 
+#include <deque>
 #include <optional>
 #include <vector>
 
@@ -10,17 +11,21 @@
 #include "flow/win_condition.h"
 #include "io/decision_provider.h"
 
-// Game is the flow orchestrator (BRD §5/§9). M2 wires real role abilities into
-// the night/day sequence and resolves deaths with the death-trigger chain.
+// Game is the flow orchestrator (BRD §5/§7/§9).
+//
+// M3 makes the night/day split faithful (BRD §7.2/§2):
+//   - Night resolves actions and records the direct night deaths *silently*,
+//     checking the win only on those deaths.
+//   - Day announces the night deaths and fires their death triggers (e.g. a
+//     knifed hunter shoots at dawn-of-day, §2). On Day 1 the sheriff election
+//     runs *before* that announcement (§7.2).
 namespace ww {
 
 class Game {
 public:
     Game(Board board, DecisionProvider& provider);
 
-    // Runs to completion and returns the result. Internal safety cap on cycles.
     GameResult run();
-
     const GameState& state() const { return state_; }
 
 private:
@@ -28,21 +33,46 @@ private:
     DecisionProvider& provider_;
     GameState state_;
 
-    GameResult runNight();  // §5.1: wolves -> seer -> witch -> dawn settle
-    GameResult runDay();    // §5.3: self-destruct? -> exile vote -> settle
+    // Night deaths recorded but not yet announced (awaiting the day's 公布死讯).
+    std::vector<int> pendingNightDeaths_;
 
-    // Settles a death batch. The batch is recorded simultaneously (§5.2, so
-    // 同刀同毒 records both causes), the win is checked once, then death triggers
-    // (e.g. hunter shot) fire and any chained deaths are settled one-at-a-time
-    // with a win check after each (§4.2 — a decided game stops the chain).
-    GameResult settle(std::vector<PendingDeath> batch);
+    // Sheriff-election bookkeeping (BRD §7.4/§7.5).
+    bool electionResolved_ = false;   // election finished (with or without a sheriff)
+    bool electionDeferred_ = false;   // interrupted on day 1 -> day 2 vote-only
+    bool badgeAbandoned_ = false;     // interrupted twice -> no badge for the whole game
 
-    // Exile vote (BRD §6): plurality, then one runoff among tied candidates voted
-    // by the remaining alive players; still tied -> no exile.
+    GameResult runNight();
+    GameResult runDay();
+
+    // Result of the sheriff election attempt.
+    struct ElectionOutcome {
+        GameResult result = GameResult::Ongoing;
+        bool interrupted = false;  // a wolf self-destructed mid-election (§7.4)
+    };
+    ElectionOutcome runSheriffElection();
+
+    // Announces the pending night deaths and resolves their triggers (§5.3/§2).
+    GameResult announceNightDeaths();
+
+    // Records + announces + triggers a same-day death batch (exile, self-destruct).
+    GameResult settleImmediate(std::vector<PendingDeath> batch);
+
+    // Records a batch (no announce/trigger/win-check); returns newly-out players.
+    std::vector<Player*> recordDeaths(const std::vector<PendingDeath>& batch);
+    // Announces + transfers badge + fires triggers for already-recorded deaths,
+    // chaining further deaths with a per-death win check (§4.2).
+    GameResult resolveDeaths(std::deque<Player*> worklist);
+
+    // Sheriff badge handoff/tear-up when the holder dies (BRD §7.6).
+    void maybeTransferBadge(Player& dead);
+
+    // Exile vote with the sheriff's 归票 weighting (BRD §6/§7.1).
     std::optional<int> resolveExile();
 
+    void electSheriff(int playerId);
     void announceDeath(const Player& p);
     std::vector<int> aliveIds() const;
+    std::vector<int> aliveWolfIds() const;
 };
 
 }  // namespace ww

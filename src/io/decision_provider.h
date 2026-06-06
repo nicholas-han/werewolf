@@ -16,6 +16,14 @@
 // requestAction(Decision, ...) form; kept concrete for now for simplicity.
 namespace ww {
 
+// The sheriff's exile ballot (BRD §7.1 归票). 归单人: badge counts 1.5 and the
+// sheriff MUST commit to a target. 归多人 PK: badge counts 1.0 and the sheriff
+// MAY abstain (target empty).
+struct SheriffBallot {
+    bool consolidateSingle = false;  // true = 归单人 (1.5, must vote)
+    std::optional<int> target;       // required if consolidateSingle
+};
+
 class DecisionProvider {
 public:
     virtual ~DecisionProvider() = default;
@@ -62,6 +70,37 @@ public:
     virtual std::optional<int> chooseSelfDestruct(const GameState& state,
                                                   const std::vector<int>& wolfIds) {
         (void)state; (void)wolfIds; return std::nullopt;
+    }
+
+    // --- M3 sheriff-election decisions (BRD §7; defaulted) ---
+
+    // Stand for sheriff (上警)? (BRD §7.2).
+    virtual bool chooseRunForSheriff(const GameState& state, int playerId) {
+        (void)state; (void)playerId; return false;
+    }
+
+    // Withdraw from the race (退水)? (BRD §7.2).
+    virtual bool chooseWithdraw(const GameState& state, int candidateId) {
+        (void)state; (void)candidateId; return false;
+    }
+
+    // Sheriff-election vote (std::nullopt = abstain) among `candidates` (§7.2).
+    virtual std::optional<int> chooseSheriffVote(const GameState& state, int voterId,
+                                                 const std::vector<int>& candidates) {
+        (void)state; (void)voterId; (void)candidates; return std::nullopt;
+    }
+
+    // Sheriff's exile ballot — 归票 (BRD §7.1). Default = 归多人 PK + abstain.
+    virtual SheriffBallot chooseSheriffExileBallot(const GameState& state, int sheriffId,
+                                                   const std::vector<int>& candidates) {
+        (void)state; (void)sheriffId; (void)candidates; return {};
+    }
+
+    // Badge handoff on the sheriff's death (BRD §7.6): new holder, or
+    // std::nullopt = tear up the badge (撕毁，全局不再有警长).
+    virtual std::optional<int> chooseBadgeTransfer(const GameState& state, int sheriffId,
+                                                   const std::vector<int>& candidates) {
+        (void)state; (void)sheriffId; (void)candidates; return std::nullopt;
     }
 
     // Directed result delivered privately to the seer (BRD §11).
