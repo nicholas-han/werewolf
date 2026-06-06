@@ -206,10 +206,10 @@ TEST(Game, SelfDestructEndsDayWithNoVote) {
     EXPECT_TRUE(game.state().find(1)->hasDeathCause(DeathCause::BlownUp));
 
     // Day 1 went straight to the self-destruct, before any exile vote (§2/§5.3):
-    // the BlownUp death must precede the first "No exile this round" (day 2's).
+    // the BlownUp death must precede the first "【放逐投票】" header (day 2's).
     auto blown = std::find(dp.events.begin(), dp.events.end(), "P1 is out (BlownUp)");
     ASSERT_NE(blown, dp.events.end());
-    auto noExile = std::find(dp.events.begin(), dp.events.end(), "No exile this round");
-    EXPECT_TRUE(noExile == dp.events.end() ||
-                (blown - dp.events.begin()) < (noExile - dp.events.begin()));
+    auto firstVote = std::find(dp.events.begin(), dp.events.end(), "【放逐投票】");
+    EXPECT_TRUE(firstVote == dp.events.end() ||
+                (blown - dp.events.begin()) < (firstVote - dp.events.begin()));
 }

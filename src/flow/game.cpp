@@ -1,6 +1,7 @@
 #include "flow/game.h"
 
 #include <algorithm>
+#include <cmath>
 #include <deque>
 #include <map>
 #include <string>
@@ -374,6 +375,33 @@ Game::ElectionOutcome Game::runSheriffElection() {
 std::optional<int> Game::resolveExile() {
     const std::vector<int> alive = aliveIds();
 
+    auto wt = [](double w) -> std::string {
+        const double r = std::round(w * 2) / 2;  // weights are multiples of 0.5
+        const long whole = static_cast<long>(std::floor(r));
+        return (r == std::floor(r)) ? std::to_string(whole) : std::to_string(whole) + ".5";
+    };
+    auto fmtVotes = [&](const std::map<int, double>& counts) -> std::string {
+        if (counts.empty()) return "(无人投票)";
+        std::string s;
+        for (const auto& [id, w] : counts) {
+            if (!s.empty()) s += ", ";
+            const Player* p = state_.find(id);
+            s += (p ? p->name() : ("#" + std::to_string(id))) + "=" + wt(w);
+        }
+        return s;
+    };
+    auto names = [&](const std::vector<int>& ids) -> std::string {
+        std::string s;
+        for (int id : ids) {
+            if (!s.empty()) s += ", ";
+            const Player* p = state_.find(id);
+            s += p ? p->name() : ("#" + std::to_string(id));
+        }
+        return s;
+    };
+
+    provider_.notify("【放逐投票】");
+
     // Round 1: the sheriff votes via 归票 (1.5 single / 1.0 PK), others weight 1 (§7.1).
     std::map<int, double> counts;
     for (int v : alive) {
@@ -387,12 +415,22 @@ std::optional<int> Game::resolveExile() {
             if (pick && contains(alive, *pick)) counts[*pick] += 1.0;
         }
     }
+    provider_.notify("  首轮票数: " + fmtVotes(counts));
     std::vector<int> leaders = topCandidates(counts);
-    if (leaders.empty()) return std::nullopt;
-    if (leaders.size() == 1) return leaders.front();
+
+    if (leaders.empty()) {
+        provider_.notify("  无人得票 -> 本轮无人出局");
+        return std::nullopt;
+    }
+    if (leaders.size() == 1) {
+        const Player* p = state_.find(leaders.front());
+        provider_.notify("  放逐结果: " + std::string(p ? p->name() : "?") + " 票数最高，被放逐");
+        return leaders.front();
+    }
 
     // Runoff (§6): everyone except the tied candidates re-votes; the badge counts
     // 1 here (§7.1), i.e. the sheriff is just another voter via chooseVote.
+    provider_.notify("  首轮平票 (" + names(leaders) + ") -> 进入决胜轮");
     std::vector<int> runoffVoters;
     for (int id : alive) {
         if (!contains(leaders, id)) runoffVoters.push_back(id);
@@ -402,9 +440,16 @@ std::optional<int> Game::resolveExile() {
         std::optional<int> pick = provider_.chooseVote(state_, v, leaders);
         if (pick && contains(leaders, *pick)) counts2[*pick] += 1.0;
     }
+    provider_.notify("  决胜轮票数: " + fmtVotes(counts2));
     std::vector<int> leaders2 = topCandidates(counts2);
-    if (leaders2.size() == 1) return leaders2.front();
-    return std::nullopt;  // still tied -> nobody exiled
+
+    if (leaders2.size() == 1) {
+        const Player* p = state_.find(leaders2.front());
+        provider_.notify("  放逐结果: " + std::string(p ? p->name() : "?") + " 被放逐");
+        return leaders2.front();
+    }
+    provider_.notify("  决胜轮仍平票 -> 本轮无人出局");
+    return std::nullopt;
 }
 
 GameResult Game::runDay() {
@@ -450,7 +495,6 @@ GameResult Game::runDay() {
     if (std::optional<int> exiled = resolveExile()) {
         return settleImmediate({{*exiled, DeathCause::Exiled}});
     }
-    provider_.notify("No exile this round");
     return evaluateWin(state_, board_.config);
 }
 
