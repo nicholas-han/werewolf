@@ -12,6 +12,7 @@ endif()
 # --- Core engine library (domain-agnostic-ish core + werewolf domain, M0) ---
 add_library(werewolf_core
     src/core/roles/role.cpp
+    src/core/abilities/role_abilities.cpp
     src/core/board.cpp
     src/core/game_state.cpp
     src/flow/win_condition.cpp
@@ -39,7 +40,11 @@ if(WEREWOLF_BUILD_TESTS)
     add_executable(flow_test tests/flow_test.cpp)
     target_link_libraries(flow_test PRIVATE werewolf_core GTest::gtest_main)
 
+    add_executable(roles_test tests/roles_test.cpp)
+    target_link_libraries(roles_test PRIVATE werewolf_core GTest::gtest_main)
+
     include(GoogleTest)
     gtest_discover_tests(core_test)
     gtest_discover_tests(flow_test)
+    gtest_discover_tests(roles_test)
 endif()
