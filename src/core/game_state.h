@@ -22,6 +22,10 @@ public:
     // empty = no sheriff). Transferable on death (§7.6).
     std::optional<int> sheriffId;
 
+    // Witch potion stock (BRD §2/§8.1). Single witch per board for now.
+    bool witchAntidoteAvailable = true;
+    bool witchPoisonAvailable = true;
+
     // Event / history log.
     std::vector<std::string> log;
 

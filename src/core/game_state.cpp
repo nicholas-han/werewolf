@@ -65,7 +65,7 @@ GameState buildInitialState(const Board& board) {
         for (int i = 0; i < slot.count; ++i) {
             int id = seat;  // id == seat for the deterministic initial layout
             state.players.emplace_back(id, "P" + std::to_string(seat), seat,
-                                       makeRole(slot.kind));
+                                       makeRole(slot.kind, board.config));
             ++seat;
         }
     }

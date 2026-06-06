@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "core/abilities/ability.h"
+#include "core/board.h"
 #include "core/enums.h"
 
 // Role is a lightweight metadata holder + a set of composed abilities
@@ -35,8 +36,9 @@ private:
     std::vector<std::unique_ptr<Ability>> abilities_;
 };
 
-// Builds a role with its metadata (faction / subKind / name) for the given kind.
-// Abilities are composed in later milestones (M2); M0 returns metadata only.
-std::unique_ptr<Role> makeRole(RoleKind kind);
+// Builds a role: metadata (faction / subKind / name) + composed abilities
+// (BRD §8). `config` parameterises ability behaviour (e.g. witch potion rules);
+// it defaults to the standard 9-player config.
+std::unique_ptr<Role> makeRole(RoleKind kind, const BoardConfig& config = {});
 
 }  // namespace ww

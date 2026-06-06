@@ -29,9 +29,13 @@ TEST(Role, MetadataPerKind) {
     EXPECT_EQ(makeRole(RoleKind::Witch)->subKind(), SubKind::PowerRole);
 }
 
-TEST(Role, StartsWithNoAbilities) {
-    // M0: abilities are composed later (M2).
-    EXPECT_TRUE(makeRole(RoleKind::Witch)->abilities().empty());
+TEST(Role, AbilitiesComposedPerKind) {
+    // M2: roles are composed from ability components (BRD §8).
+    EXPECT_TRUE(makeRole(RoleKind::Civilian)->abilities().empty());  // vanilla
+    EXPECT_EQ(makeRole(RoleKind::Werewolf)->abilities().size(), 1u);
+    EXPECT_EQ(makeRole(RoleKind::Seer)->abilities().size(), 1u);
+    EXPECT_EQ(makeRole(RoleKind::Witch)->abilities().size(), 1u);
+    EXPECT_EQ(makeRole(RoleKind::Hunter)->abilities().front()->name(), "HunterShot");
 }
 
 // --- Player status & death causes (BRD §1/§5.2) ---
