@@ -25,6 +25,13 @@ public:
     std::deque<std::optional<int>> hunterShots;
     std::deque<std::optional<int>> selfDestructs;
 
+    // Sheriff election (BRD §7).
+    std::deque<bool> runForSheriff;
+    std::deque<bool> withdraws;
+    std::deque<std::optional<int>> sheriffVotes;
+    std::deque<SheriffBallot> sheriffExileBallots;
+    std::deque<std::optional<int>> badgeTransfers;  // a nullopt entry = tear up
+
     std::vector<std::string> events;
     // (seerId, targetId, isWolf) captured per inspection.
     std::vector<std::tuple<int, int, bool>> inspectResults;
@@ -66,6 +73,30 @@ public:
         return popOpt(selfDestructs);
     }
 
+    bool chooseRunForSheriff(const GameState&, int) override {
+        return popBool(runForSheriff);
+    }
+
+    bool chooseWithdraw(const GameState&, int) override { return popBool(withdraws); }
+
+    std::optional<int> chooseSheriffVote(const GameState&, int,
+                                         const std::vector<int>&) override {
+        return popOpt(sheriffVotes);
+    }
+
+    SheriffBallot chooseSheriffExileBallot(const GameState&, int,
+                                           const std::vector<int>&) override {
+        if (sheriffExileBallots.empty()) return {};
+        SheriffBallot b = sheriffExileBallots.front();
+        sheriffExileBallots.pop_front();
+        return b;
+    }
+
+    std::optional<int> chooseBadgeTransfer(const GameState&, int,
+                                           const std::vector<int>&) override {
+        return popOpt(badgeTransfers);
+    }
+
     void onInspectResult(int seerId, int targetId, bool isWolf) override {
         inspectResults.emplace_back(seerId, targetId, isWolf);
     }
@@ -76,6 +107,13 @@ private:
     static std::optional<int> popOpt(std::deque<std::optional<int>>& q) {
         if (q.empty()) return std::nullopt;
         std::optional<int> v = q.front();
+        q.pop_front();
+        return v;
+    }
+
+    static bool popBool(std::deque<bool>& q) {
+        if (q.empty()) return false;
+        bool v = q.front();
         q.pop_front();
         return v;
     }

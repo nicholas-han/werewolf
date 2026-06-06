@@ -110,6 +110,7 @@ TEST(Game, HunterShootsWhenExiled) {
     board.name = "hunter-exile";
     board.roster = {{RoleKind::Werewolf, 1}, {RoleKind::Hunter, 1}, {RoleKind::Civilian, 2}};
     board.config.winRule = WinRule::KillAll;
+    board.config.sheriffEnabled = false;  // isolate ability behaviour from the election
 
     ScriptedDecisionProvider dp;
     // Night 1: 空刀. Day 1: everyone votes out the hunter (seat 2); hunter shoots
@@ -132,6 +133,7 @@ TEST(Game, HunterCannotShootWhenPoisoned) {
     board.roster = {{RoleKind::Werewolf, 1}, {RoleKind::Hunter, 1},
                     {RoleKind::Witch, 1}, {RoleKind::Civilian, 2}};
     board.config.winRule = WinRule::KillAll;
+    board.config.sheriffEnabled = false;  // isolate ability behaviour from the election
 
     ScriptedDecisionProvider dp;
     // Night 1: wolves knife civ 4; witch poisons hunter 2. Hunter dies poisoned ->
@@ -155,6 +157,7 @@ TEST(Game, KnifeAndPoisonRecordBothCausesAndBlockShot) {
     board.roster = {{RoleKind::Werewolf, 1}, {RoleKind::Witch, 1},
                     {RoleKind::Hunter, 1}, {RoleKind::Civilian, 1}};
     board.config.winRule = WinRule::KillAll;
+    board.config.sheriffEnabled = false;  // isolate ability behaviour from the election
 
     ScriptedDecisionProvider dp;
     // Night 1: wolves knife hunter 3; witch poisons hunter 3 too.
@@ -190,6 +193,7 @@ TEST(Game, SelfDestructEndsDayWithNoVote) {
     board.name = "self-destruct";
     board.roster = {{RoleKind::Werewolf, 2}, {RoleKind::Civilian, 3}};
     board.config.winRule = WinRule::KillAll;
+    board.config.sheriffEnabled = false;  // isolate ability behaviour from the election
 
     ScriptedDecisionProvider dp;
     // Night 1: 空刀. Day 1: wolf seat 1 self-destructs -> day ends immediately, no vote.

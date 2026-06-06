@@ -43,8 +43,12 @@ if(WEREWOLF_BUILD_TESTS)
     add_executable(roles_test tests/roles_test.cpp)
     target_link_libraries(roles_test PRIVATE werewolf_core GTest::gtest_main)
 
+    add_executable(sheriff_test tests/sheriff_test.cpp)
+    target_link_libraries(sheriff_test PRIVATE werewolf_core GTest::gtest_main)
+
     include(GoogleTest)
     gtest_discover_tests(core_test)
     gtest_discover_tests(flow_test)
     gtest_discover_tests(roles_test)
+    gtest_discover_tests(sheriff_test)
 endif()
