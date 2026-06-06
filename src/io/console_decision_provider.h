@@ -32,8 +32,10 @@ public:
     std::optional<int> chooseSheriffVote(const GameState&, int, const std::vector<int>&) override;
     SheriffBallot chooseSheriffExileBallot(const GameState&, int, const std::vector<int>&) override;
     std::optional<int> chooseBadgeTransfer(const GameState&, int, const std::vector<int>&) override;
+    SpeechDirection chooseSpeechDirection(const GameState&, int, int, bool) override;
     void onInspectResult(int seerId, int targetId, bool isWolf) override;
     void notify(const std::string& message) override;
+    void pause(const std::string& note) override;
 
 private:
     std::istream& in_;

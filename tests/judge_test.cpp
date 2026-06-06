@@ -1,0 +1,94 @@
+#include <gtest/gtest.h>
+
+#include <optional>
+#include <string>
+#include <vector>
+
+#include "core/board.h"
+#include "core/enums.h"
+#include "core/game_state.h"
+#include "flow/game.h"
+#include "flow/last_words.h"
+#include "io/scripted_decision_provider.h"
+
+using namespace ww;
+
+namespace {
+
+Board killAll(std::string name, std::vector<RoleSlot> roster) {
+    Board b;
+    b.name = std::move(name);
+    b.roster = std::move(roster);
+    b.config.winRule = WinRule::KillAll;
+    b.config.sheriffEnabled = false;  // isolate last-words cues from the election
+    return b;
+}
+
+bool anyEventContains(const ScriptedDecisionProvider& dp, const std::string& sub) {
+    for (const std::string& e : dp.events) {
+        if (e.find(sub) != std::string::npos) return true;
+    }
+    return false;
+}
+
+}  // namespace
+
+// ---------- ② Last-words predicate (BRD §5.3) ----------
+
+TEST(LastWords, DerivedFromPhaseAndCause) {
+    EXPECT_TRUE(hasLastWords(Phase::Day, 3, {DeathCause::Exiled}));   // daytime exile
+    EXPECT_TRUE(hasLastWords(Phase::Day, 3, {DeathCause::Shot}));     // daytime hunter shot
+    EXPECT_FALSE(hasLastWords(Phase::Day, 3, {DeathCause::BlownUp})); // self-destruct: none
+    EXPECT_TRUE(hasLastWords(Phase::Night, 1, {DeathCause::Killed})); // first night
+    EXPECT_FALSE(hasLastWords(Phase::Night, 2, {DeathCause::Killed})); // later nights: none
+}
+
+// ---------- ① Setup: explicit seat->role assignment ----------
+
+TEST(Setup, BuildsFromExplicitSeatRoles) {
+    Board board = makeBoard9_SeerWitchHunter();
+    std::vector<RoleKind> seats = {
+        RoleKind::Civilian, RoleKind::Werewolf, RoleKind::Seer,    RoleKind::Civilian,
+        RoleKind::Witch,    RoleKind::Werewolf, RoleKind::Hunter,  RoleKind::Werewolf,
+        RoleKind::Civilian};
+    EXPECT_TRUE(seatRolesMatchRoster(board, seats));
+
+    GameState s = buildInitialState(board, seats);
+    ASSERT_EQ(s.players.size(), 9u);
+    EXPECT_EQ(s.players[0].role().kind(), RoleKind::Civilian);  // seat 1
+    EXPECT_EQ(s.players[1].role().kind(), RoleKind::Werewolf);  // seat 2
+    EXPECT_EQ(s.countAlive(Faction::Wolf), 3);
+    EXPECT_EQ(s.countAlive(SubKind::PowerRole), 3);
+}
+
+TEST(Setup, RejectsMismatchedRoster) {
+    Board board = makeBoard9_SeerWitchHunter();
+    std::vector<RoleKind> wrong(9, RoleKind::Civilian);  // 9 civilians != roster
+    EXPECT_FALSE(seatRolesMatchRoster(board, wrong));
+}
+
+// ---------- ② Last-words cue inside a real game ----------
+
+TEST(Game, FirstNightDeathIsCuedButLaterNightsAreNot) {
+    // 1 wolf + 4 civ. Knife civ2 (night 1) then civ3 (night 2); abstain by day.
+    ScriptedDecisionProvider dp;
+    dp.nightKills = {2, 3, 4};
+
+    Game game(killAll("ln", {{RoleKind::Werewolf, 1}, {RoleKind::Civilian, 4}}), dp);
+    game.run();
+
+    EXPECT_TRUE(anyEventContains(dp, "P2 may give last words"));   // first night -> cued
+    EXPECT_FALSE(anyEventContains(dp, "P3 may give last words"));  // night 2 -> not cued
+}
+
+TEST(Game, DaytimeExileIsCuedForLastWords) {
+    // 1 wolf + 3 civ. Day-1 exile of civ2 (daytime, non-self-destruct) -> last words.
+    ScriptedDecisionProvider dp;
+    dp.nightKills = {std::nullopt, 3};  // 空刀 night 1, then push to a wolf win
+    dp.votes = {2, 2, 2, 2};            // exile civ2 on day 1
+
+    Game game(killAll("ex", {{RoleKind::Werewolf, 1}, {RoleKind::Civilian, 3}}), dp);
+    game.run();
+
+    EXPECT_TRUE(anyEventContains(dp, "P2 may give last words"));
+}

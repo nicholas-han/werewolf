@@ -32,15 +32,18 @@ public:
     Status status() const { return status_; }
     const std::vector<DeathCause>& deathCauses() const { return deathCauses_; }
     std::optional<int> deathDay() const { return deathDay_; }
+    std::optional<Phase> deathPhase() const { return deathPhase_; }
 
     // Records a death cause. A player may accumulate several causes (BRD §1/§5.2,
     // e.g. knifed + poisoned the same night). The first lethal cause flips the
-    // player to Out and stamps the death day; later causes are appended only.
-    void recordDeath(DeathCause cause, int day) {
+    // player to Out and stamps the death day + phase (used for last-words
+    // eligibility, §5.3); later causes are appended only.
+    void recordDeath(DeathCause cause, int day, Phase phase = Phase::Night) {
         deathCauses_.push_back(cause);
         if (status_ == Status::Alive) {
             status_ = Status::Out;
             deathDay_ = day;
+            deathPhase_ = phase;
         }
     }
 
@@ -66,6 +69,7 @@ private:
     Status status_ = Status::Alive;
     std::vector<DeathCause> deathCauses_;
     std::optional<int> deathDay_;
+    std::optional<Phase> deathPhase_;
 };
 
 }  // namespace ww

@@ -47,4 +47,12 @@ public:
 // concern added later). Names default to "P{seat}".
 GameState buildInitialState(const Board& board);
 
+// Builds the initial state with an explicit seat->role assignment (BRD M5 §setup:
+// the moderator enters the actually-dealt roles). `seatRoles[i]` is seat i+1's
+// role; its size must equal board.totalPlayers(). Names default to "P{seat}".
+GameState buildInitialState(const Board& board, const std::vector<RoleKind>& seatRoles);
+
+// True if `seatRoles` matches the board roster's role multiset (BRD M5 §setup).
+bool seatRolesMatchRoster(const Board& board, const std::vector<RoleKind>& seatRoles);
+
 }  // namespace ww

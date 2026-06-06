@@ -184,6 +184,16 @@ std::optional<int> ConsoleDecisionProvider::chooseBadgeTransfer(const GameState&
     return promptOptional("  Transfer the badge to whom (blank = tear it up)", state, candidates);
 }
 
+SpeechDirection ConsoleDecisionProvider::chooseSpeechDirection(const GameState& state,
+                                                               int sheriffId, int anchorSeat,
+                                                               bool singleDeath) {
+    out_ << "[Day] Sheriff " << nameOf(state, sheriffId) << " sets the speaking order.\n";
+    out_ << "  start from " << (singleDeath ? "the dead player's" : "the sheriff's")
+         << " seat " << anchorSeat << "; direction L = toward higher seats, R = toward lower\n";
+    return promptYesNo("  go Left (higher seats)? (n = Right)") ? SpeechDirection::Left
+                                                                : SpeechDirection::Right;
+}
+
 void ConsoleDecisionProvider::onInspectResult(int seerId, int targetId, bool isWolf) {
     out_ << "[Private->Seer #" << seerId << "] #" << targetId << " is "
          << (isWolf ? "a WEREWOLF (查杀)" : "GOOD (金水)") << "\n";
@@ -191,6 +201,11 @@ void ConsoleDecisionProvider::onInspectResult(int seerId, int targetId, bool isW
 
 void ConsoleDecisionProvider::notify(const std::string& message) {
     out_ << message << "\n";
+}
+
+void ConsoleDecisionProvider::pause(const std::string& note) {
+    out_ << note << " [press Enter] ";
+    readLine();  // block until Enter (or EOF)
 }
 
 }  // namespace ww

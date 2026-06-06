@@ -9,6 +9,7 @@
 #include "core/abilities/ability.h"
 #include "core/player.h"
 #include "core/roles/role.h"
+#include "flow/last_words.h"
 
 namespace ww {
 
@@ -36,8 +37,11 @@ bool contains(const std::vector<int>& v, int x) {
 
 }  // namespace
 
-Game::Game(Board board, DecisionProvider& provider)
-    : board_(std::move(board)), provider_(provider), state_(buildInitialState(board_)) {}
+Game::Game(Board board, DecisionProvider& provider,
+           std::optional<std::vector<RoleKind>> seatRoles)
+    : board_(std::move(board)),
+      provider_(provider),
+      state_(seatRoles ? buildInitialState(board_, *seatRoles) : buildInitialState(board_)) {}
 
 std::vector<int> Game::aliveIds() const {
     std::vector<int> ids;
@@ -70,7 +74,7 @@ std::vector<Player*> Game::recordDeaths(const std::vector<PendingDeath>& batch) 
         Player* p = state_.find(pd.playerId);
         if (p == nullptr) continue;
         const bool wasAlive = p->isAlive();
-        p->recordDeath(pd.cause, state_.day);  // accumulates causes (同刀同毒, §5.2)
+        p->recordDeath(pd.cause, state_.day, state_.phase);  // accumulates causes (同刀同毒, §5.2)
         if (wasAlive) newly.push_back(p);
     }
     return newly;
@@ -104,6 +108,9 @@ GameResult Game::resolveDeaths(std::deque<Player*> worklist) {
         worklist.pop_front();
 
         announceDeath(*dead);
+        if (hasLastWords(*dead)) {  // ② §5.3 last-words cue
+            provider_.notify("  -> " + dead->name() + " may give last words (遗言)");
+        }
         maybeTransferBadge(*dead);  // §7.6: transfer before death-triggered skills
 
         if (GameResult r = evaluateWin(state_, board_.config); r != GameResult::Ongoing) {
@@ -119,7 +126,7 @@ GameResult Game::resolveDeaths(std::deque<Player*> worklist) {
                 Player* t = state_.find(td.playerId);
                 if (t == nullptr) continue;
                 const bool wasAlive = t->isAlive();
-                t->recordDeath(td.cause, state_.day);
+                t->recordDeath(td.cause, state_.day, state_.phase);
                 if (wasAlive) worklist.push_back(t);
             }
         }
@@ -143,8 +150,50 @@ GameResult Game::settleImmediate(std::vector<PendingDeath> batch) {
     return resolveDeaths(std::move(worklist));
 }
 
+std::string Game::moderatorStatus() const {
+    std::string s = "[Status] day " + std::to_string(state_.day) + " | alive:";
+    for (const Player& p : state_.players) {
+        if (!p.isAlive()) continue;
+        s += " " + p.name() + "(" + p.role().name();
+        if (state_.sheriffId && *state_.sheriffId == p.id()) s += ",SHERIFF";
+        s += ")";
+    }
+    s += " | witch antidote=";
+    s += state_.witchAntidoteAvailable ? "Y" : "N";
+    s += " poison=";
+    s += state_.witchPoisonAvailable ? "Y" : "N";
+    return s;
+}
+
+void Game::cueSpeechOrder(int nightDeathCount, int singleDeadSeat) {
+    if (!state_.sheriffId) return;  // no sheriff -> moderator improvises (§7.1.2)
+    const int sheriff = *state_.sheriffId;
+    const Player* sp = state_.find(sheriff);
+    const bool single = (nightDeathCount == 1);
+    const int anchorSeat = single ? singleDeadSeat : (sp ? sp->seat() : 1);
+
+    SpeechDirection dir = provider_.chooseSpeechDirection(state_, sheriff, anchorSeat, single);
+
+    const int total = static_cast<int>(state_.players.size());
+    const int step = (dir == SpeechDirection::Left) ? 1 : -1;
+    std::vector<int> order;
+    int seat = anchorSeat;
+    for (int i = 0; i < total; ++i) {
+        seat = ((seat - 1 + step + total) % total) + 1;  // next seat in dir, wrap 1..total
+        const Player* p = state_.find(seat);
+        if (p && p->isAlive()) order.push_back(seat);
+    }
+
+    std::string s = "[Day] speaking order:";
+    for (int seatId : order) {
+        const Player* p = state_.find(seatId);
+        s += " " + (p ? p->name() : ("#" + std::to_string(seatId)));
+    }
+    provider_.notify(s);
+}
+
 GameResult Game::runNight() {
-    provider_.notify("Night " + std::to_string(state_.day) + " begins");
+    provider_.notify("=== Night " + std::to_string(state_.day) + " ===  天黑请闭眼");
 
     for (Player& p : state_.players) {
         p.guardedTonight = false;
@@ -342,7 +391,8 @@ std::optional<int> Game::resolveExile() {
 }
 
 GameResult Game::runDay() {
-    provider_.notify("Day " + std::to_string(state_.day) + " begins");
+    provider_.notify("=== Day " + std::to_string(state_.day) + " ===  天亮了");
+    provider_.notify(moderatorStatus());  // ④ status board
 
     // Sheriff election on day 1 (or the deferred day-2 vote), BEFORE 公布死讯 (§7.2).
     const bool doElection = board_.config.sheriffEnabled && !electionResolved_ &&
@@ -353,8 +403,19 @@ GameResult Game::runDay() {
         if (eo.interrupted) return GameResult::Ongoing;  // §7.4: day ends -> night
     }
 
+    // Capture last night's toll for the speaking-order cue (③) before announcing.
+    const int nightDeathCount = static_cast<int>(pendingNightDeaths_.size());
+    int singleDeadSeat = -1;
+    if (nightDeathCount == 1) {
+        if (const Player* d = state_.find(pendingNightDeaths_.front())) singleDeadSeat = d->seat();
+    }
+
     // 公布死讯 + 夜死触发（猎人翻枪）(§5.3 / §2).
+    provider_.pause("准备公布昨夜情况");  // ⑤ pacing
     if (GameResult r = announceNightDeaths(); r != GameResult::Ongoing) return r;
+
+    // 发言顺序 cue (③ §7.1.2): single death -> 死左/死右; multi / peaceful -> from sheriff.
+    cueSpeechOrder(nightDeathCount, singleDeadSeat);
 
     // Daytime self-destruct during 发言 (§2): day ends immediately, no vote.
     if (board_.config.blownUpEnabled) {
