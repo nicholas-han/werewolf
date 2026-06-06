@@ -219,8 +219,20 @@ GameResult Game::runNight() {
         return a.actor->nightOrder() < b.actor->nightOrder();
     });
 
+    // Run each role group with "<role>请睁眼 / 请闭眼" narration (BRD M5 ⑤). Actors
+    // are sorted by night order, so same-cue actors (e.g. all wolves) are contiguous.
     NightContext ctx;
-    for (const Act& a : acts) a.actor->actAtNight(ctx, state_, *a.owner, provider_);
+    std::string openCue;
+    for (const Act& a : acts) {
+        const std::string cue = a.actor->nightCue();
+        if (cue != openCue) {
+            if (!openCue.empty()) provider_.notify(openCue + "请闭眼");
+            provider_.notify(cue + "请睁眼");
+            openCue = cue;
+        }
+        a.actor->actAtNight(ctx, state_, *a.owner, provider_);
+    }
+    if (!openCue.empty()) provider_.notify(openCue + "请闭眼");
 
     std::vector<PendingDeath> batch;
     if (ctx.wolfTarget && ctx.savedTarget != ctx.wolfTarget) {

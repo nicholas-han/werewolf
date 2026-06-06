@@ -81,6 +81,19 @@ TEST(Game, FirstNightDeathIsCuedButLaterNightsAreNot) {
     EXPECT_FALSE(anyEventContains(dp, "P3 may give last words"));  // night 2 -> not cued
 }
 
+TEST(Game, NightRolesAreCuedOpenAndClose) {
+    // ⑤ Each night role group gets "<role>请睁眼 / 请闭眼" narration.
+    ScriptedDecisionProvider dp;
+    dp.nightKills = {7, 8, 9};  // wipe the civilians -> wolf win, a few nights cued
+
+    Game game(makeBoard9_SeerWitchHunter(), dp);
+    game.run();
+    EXPECT_TRUE(anyEventContains(dp, "狼人请睁眼"));
+    EXPECT_TRUE(anyEventContains(dp, "狼人请闭眼"));
+    EXPECT_TRUE(anyEventContains(dp, "预言家请睁眼"));
+    EXPECT_TRUE(anyEventContains(dp, "女巫请睁眼"));
+}
+
 TEST(Game, PeacefulNightIsAnnounced) {
     // Night 1 is 空刀 -> the morning must explicitly announce the peaceful night.
     ScriptedDecisionProvider dp;

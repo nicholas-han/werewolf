@@ -18,6 +18,7 @@ class NightKill : public Ability, public NightActor {
 public:
     std::string name() const override { return "NightKill"; }
     int nightOrder() const override { return 10; }
+    std::string nightCue() const override { return "狼人"; }
     void actAtNight(NightContext& ctx, GameState& state, Player& owner,
                     DecisionProvider& provider) override;
 };
@@ -26,6 +27,7 @@ class Inspect : public Ability, public NightActor {
 public:
     std::string name() const override { return "Inspect"; }
     int nightOrder() const override { return 20; }
+    std::string nightCue() const override { return "预言家"; }
     void actAtNight(NightContext& ctx, GameState& state, Player& owner,
                     DecisionProvider& provider) override;
 };
@@ -37,6 +39,7 @@ public:
 
     std::string name() const override { return "WitchPotions"; }
     int nightOrder() const override { return 30; }
+    std::string nightCue() const override { return "女巫"; }
     void actAtNight(NightContext& ctx, GameState& state, Player& owner,
                     DecisionProvider& provider) override;
 
