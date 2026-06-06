@@ -1,0 +1,39 @@
+cmake_minimum_required(VERSION 3.20)
+project(werewolf CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Debug CACHE STRING "" FORCE)
+endif()
+
+# --- Core engine library (domain-agnostic-ish core + werewolf domain, M0) ---
+add_library(werewolf_core
+    src/core/roles/role.cpp
+    src/core/board.cpp
+    src/core/game_state.cpp
+)
+target_include_directories(werewolf_core PUBLIC src)
+target_compile_features(werewolf_core PUBLIC cxx_std_20)
+
+# --- Tests (GoogleTest via FetchContent, BRD §13) ---
+option(WEREWOLF_BUILD_TESTS "Build tests" ON)
+if(WEREWOLF_BUILD_TESTS)
+    enable_testing()
+    include(FetchContent)
+    FetchContent_Declare(
+        googletest
+        URL https://github.com/google/googletest/archive/refs/tags/v1.15.2.tar.gz
+        DOWNLOAD_EXTRACT_TIMESTAMP true
+    )
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(googletest)
+
+    add_executable(core_test tests/core_test.cpp)
+    target_link_libraries(core_test PRIVATE werewolf_core GTest::gtest_main)
+
+    include(GoogleTest)
+    gtest_discover_tests(core_test)
+endif()
