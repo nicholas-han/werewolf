@@ -9,6 +9,7 @@
 #include "core/game_state.h"
 #include "flow/game.h"
 #include "flow/last_words.h"
+#include "flow/speech_order.h"
 #include "io/scripted_decision_provider.h"
 
 using namespace ww;
@@ -65,6 +66,34 @@ TEST(Setup, RejectsMismatchedRoster) {
     Board board = makeBoard9_SeerWitchHunter();
     std::vector<RoleKind> wrong(9, RoleKind::Civilian);  // 9 civilians != roster
     EXPECT_FALSE(seatRolesMatchRoster(board, wrong));
+}
+
+TEST(Setup, RandomDealIsAValidPermutation) {
+    Board board = makeBoard9_SeerWitchHunter();
+    std::vector<RoleKind> deal = randomDeal(board, 12345u);
+    EXPECT_EQ(deal.size(), 9u);
+    EXPECT_TRUE(seatRolesMatchRoster(board, deal));        // valid permutation of roster
+    EXPECT_EQ(deal, randomDeal(board, 12345u));            // reproducible per seed
+}
+
+// ---------- ② Random speech order (no sheriff) time helpers ----------
+
+TEST(SpeechOrder, TimeHelpers) {
+    EXPECT_EQ(timeDirection(2), SpeechDirection::Left);   // even -> Left
+    EXPECT_EQ(timeDirection(3), SpeechDirection::Right);  // odd  -> Right
+    EXPECT_EQ(timeFirstSpeaker(10, 3), 1);
+    EXPECT_EQ(timeFirstSpeaker(9, 3), 0);
+    EXPECT_EQ(timeFirstSpeaker(11, 4), 3);
+    EXPECT_EQ(timeFirstSpeaker(5, 0), 0);  // guard against div-by-zero
+}
+
+TEST(Game, NoSheriffSpeechOrderIsAnnounced) {
+    // Sheriff disabled -> the engine still announces a (randomised) speaking order.
+    ScriptedDecisionProvider dp;
+    dp.nightKills = {2, 3};  // a single night death drives the cue
+    Game game(killAll("speak", {{RoleKind::Werewolf, 1}, {RoleKind::Civilian, 3}}), dp);
+    game.run();
+    EXPECT_TRUE(anyEventContains(dp, "发言顺序"));
 }
 
 // ---------- ② Last-words cue inside a real game ----------

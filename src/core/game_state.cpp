@@ -1,7 +1,9 @@
 #include "core/game_state.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <map>
+#include <random>
 
 #include "core/roles/role.h"
 
@@ -91,6 +93,21 @@ bool seatRolesMatchRoster(const Board& board, const std::vector<RoleKind>& seatR
     std::map<RoleKind, int> have;
     for (RoleKind r : seatRoles) have[r] += 1;
     return need == have;
+}
+
+std::vector<RoleKind> rosterRoleList(const Board& board) {
+    std::vector<RoleKind> roles;
+    for (const RoleSlot& slot : board.roster) {
+        for (int i = 0; i < slot.count; ++i) roles.push_back(slot.kind);
+    }
+    return roles;
+}
+
+std::vector<RoleKind> randomDeal(const Board& board, unsigned seed) {
+    std::vector<RoleKind> roles = rosterRoleList(board);
+    std::mt19937 rng(seed);
+    std::shuffle(roles.begin(), roles.end(), rng);
+    return roles;
 }
 
 }  // namespace ww

@@ -1,6 +1,7 @@
 #include <iostream>
 #include <map>
 #include <optional>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -20,16 +21,22 @@ using namespace ww;
 const std::vector<RoleKind> kRoleMenu = {RoleKind::Werewolf, RoleKind::Seer, RoleKind::Witch,
                                          RoleKind::Hunter, RoleKind::Civilian};
 
-// Prompts the moderator for the actually-dealt role of each seat (BRD M5 §setup).
+// Prompts the moderator to choose seat->role assignment (BRD M5 §setup / 随机发牌).
 // Returns std::nullopt to fall back to the default roster-order layout.
 std::optional<std::vector<RoleKind>> promptSetup(const Board& board, std::istream& in,
                                                  std::ostream& out) {
-    out << "是否手动录入每个座位的真实身份？（y=录入，n=用默认布局）\n> ";
+    out << "发牌方式：1) 随机发牌（推荐）  2) 手动录入  3) 默认顺序\n> ";
     std::string line;
     if (!std::getline(in, line)) return std::nullopt;
-    if (line.empty() || (line[0] != 'y' && line[0] != 'Y')) return std::nullopt;
+    const char c = line.empty() ? '1' : line[0];  // default = random
 
-    // Remaining role pool from the roster.
+    if (c == '3') return std::nullopt;  // fixed roster-order layout
+    if (c != '2') {                     // random deal (default)
+        std::random_device rd;
+        return randomDeal(board, rd());
+    }
+
+    // Manual entry. Remaining role pool from the roster.
     std::map<RoleKind, int> pool;
     for (const RoleSlot& slot : board.roster) pool[slot.kind] += slot.count;
 

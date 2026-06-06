@@ -1,6 +1,7 @@
 #include "flow/game.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <deque>
 #include <map>
@@ -12,6 +13,7 @@
 #include "core/player.h"
 #include "core/roles/role.h"
 #include "flow/last_words.h"
+#include "flow/speech_order.h"
 
 namespace ww {
 
@@ -35,6 +37,10 @@ std::vector<int> topCandidates(const std::map<int, double>& counts) {
 
 bool contains(const std::vector<int>& v, int x) {
     return std::find(v.begin(), v.end(), x) != v.end();
+}
+
+long long nowTicks() {
+    return std::chrono::system_clock::now().time_since_epoch().count();
 }
 
 }  // namespace
@@ -173,22 +179,56 @@ std::string Game::moderatorStatus() const {
 }
 
 void Game::cueSpeechOrder(int nightDeathCount, int singleDeadSeat) {
-    if (!state_.sheriffId) return;  // no sheriff -> moderator improvises (§7.1.2)
-    const int sheriff = *state_.sheriffId;
-    const Player* sp = state_.find(sheriff);
-    const bool single = (nightDeathCount == 1);
-    const int anchorSeat = single ? singleDeadSeat : (sp ? sp->seat() : 1);
-
-    SpeechDirection dir = provider_.chooseSpeechDirection(state_, sheriff, anchorSeat, single);
+    std::vector<int> aliveSeats;
+    for (const Player& p : state_.players) {
+        if (p.isAlive()) aliveSeats.push_back(p.seat());
+    }
+    if (aliveSeats.empty()) return;
+    std::sort(aliveSeats.begin(), aliveSeats.end());
 
     const int total = static_cast<int>(state_.players.size());
+    const bool single = (nightDeathCount == 1);
+    auto nextSeat = [total](int s, int step) { return ((s - 1 + step + total) % total) + 1; };
+    auto firstAliveAfter = [&](int seat, int step) {
+        int s = seat;
+        for (int i = 0; i < total; ++i) {
+            s = nextSeat(s, step);
+            const Player* p = state_.find(s);
+            if (p && p->isAlive()) return s;
+        }
+        return seat;
+    };
+
+    // Decide direction, then the first speaker.
+    SpeechDirection dir;
+    if (state_.sheriffId) {  // §7.1.2: the sheriff sets it
+        const Player* sp = state_.find(*state_.sheriffId);
+        const int anchor = single ? singleDeadSeat : (sp ? sp->seat() : aliveSeats.front());
+        dir = provider_.chooseSpeechDirection(state_, *state_.sheriffId, anchor, single);
+    } else {  // §随机发言: direction from system time
+        dir = timeDirection(nowTicks());
+    }
     const int step = (dir == SpeechDirection::Left) ? 1 : -1;
+
+    int startSpeaker;
+    if (single) {
+        // 死左/死右: start from the lone victim's neighbour in the chosen direction.
+        startSpeaker = firstAliveAfter(singleDeadSeat, step);
+    } else if (state_.sheriffId) {
+        const Player* sp = state_.find(*state_.sheriffId);
+        startSpeaker = firstAliveAfter(sp ? sp->seat() : aliveSeats.front(), step);
+    } else {
+        // Peaceful / multi-death with no sheriff: random first speaker from time.
+        startSpeaker = aliveSeats[timeFirstSpeaker(nowTicks(),
+                                                   static_cast<int>(aliveSeats.size()))];
+    }
+
     std::vector<int> order;
-    int seat = anchorSeat;
+    int seat = startSpeaker;
     for (int i = 0; i < total; ++i) {
-        seat = ((seat - 1 + step + total) % total) + 1;  // next seat in dir, wrap 1..total
         const Player* p = state_.find(seat);
         if (p && p->isAlive()) order.push_back(seat);
+        seat = nextSeat(seat, step);
     }
 
     std::string names;

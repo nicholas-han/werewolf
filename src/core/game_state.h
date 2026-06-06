@@ -55,4 +55,11 @@ GameState buildInitialState(const Board& board, const std::vector<RoleKind>& sea
 // True if `seatRoles` matches the board roster's role multiset (BRD M5 §setup).
 bool seatRolesMatchRoster(const Board& board, const std::vector<RoleKind>& seatRoles);
 
+// Flat list of roster roles in roster order (e.g. {Wolf,Wolf,Wolf,Seer,...}).
+std::vector<RoleKind> rosterRoleList(const Board& board);
+
+// Random seat->role deal (BRD roadmap §随机发牌): a shuffled roster, seeded for
+// reproducibility. Always a valid permutation of the roster.
+std::vector<RoleKind> randomDeal(const Board& board, unsigned seed);
+
 }  // namespace ww
