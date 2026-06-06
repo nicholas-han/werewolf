@@ -2,6 +2,7 @@
 
 #include <deque>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "core/abilities/ability.h"
@@ -23,7 +24,10 @@ namespace ww {
 
 class Game {
 public:
-    Game(Board board, DecisionProvider& provider);
+    // `seatRoles` (BRD M5 §setup): explicit seat->role assignment entered by the
+    // moderator. If empty, the deterministic roster-order layout is used.
+    Game(Board board, DecisionProvider& provider,
+         std::optional<std::vector<RoleKind>> seatRoles = std::nullopt);
 
     GameResult run();
     const GameState& state() const { return state_; }
@@ -71,6 +75,11 @@ private:
 
     void electSheriff(int playerId);
     void announceDeath(const Player& p);
+
+    // M5 moderator cues:
+    std::string moderatorStatus() const;                 // ④ status board
+    void cueSpeechOrder(int nightDeathCount, int singleDeadSeat);  // ③ 死左/死右
+
     std::vector<int> aliveIds() const;
     std::vector<int> aliveWolfIds() const;
 };

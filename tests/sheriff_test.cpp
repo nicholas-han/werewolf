@@ -8,6 +8,7 @@
 #include "core/board.h"
 #include "core/enums.h"
 #include "flow/game.h"
+#include "core/messages.h"
 #include "io/scripted_decision_provider.h"
 
 using namespace ww;
@@ -43,7 +44,7 @@ TEST(Sheriff, SingleCandidateAutoElected) {
     EXPECT_EQ(game.run(), GameResult::WolfWins);
     ASSERT_TRUE(game.state().sheriffId.has_value());
     EXPECT_EQ(*game.state().sheriffId, 2);
-    EXPECT_TRUE(hasEvent(dp, "P2 becomes sheriff"));
+    EXPECT_TRUE(hasEvent(dp, txt::becomesSheriff("P2")));
 }
 
 TEST(Sheriff, NobodyRunsNoSheriff) {
@@ -54,7 +55,7 @@ TEST(Sheriff, NobodyRunsNoSheriff) {
     Game game(mkBoard("none", {{RoleKind::Werewolf, 1}, {RoleKind::Civilian, 3}}), dp);
     game.run();
     EXPECT_FALSE(game.state().sheriffId.has_value());
-    EXPECT_TRUE(hasEvent(dp, "No sheriff (nobody ran)"));
+    EXPECT_TRUE(hasEvent(dp, txt::noSheriffNobodyRan()));
 }
 
 TEST(Sheriff, EveryoneRunsBadgeLost) {
@@ -65,7 +66,7 @@ TEST(Sheriff, EveryoneRunsBadgeLost) {
     Game game(mkBoard("all", {{RoleKind::Werewolf, 1}, {RoleKind::Civilian, 3}}), dp);
     game.run();
     EXPECT_FALSE(game.state().sheriffId.has_value());
-    EXPECT_TRUE(hasEvent(dp, "Badge lost (everyone ran)"));
+    EXPECT_TRUE(hasEvent(dp, txt::badgeLostEveryoneRan()));
 }
 
 TEST(Sheriff, NonCandidatesElectTheWinner) {
@@ -112,7 +113,7 @@ TEST(Sheriff, BadgeTransferredWhenSheriffExiled) {
     ASSERT_TRUE(game.state().sheriffId.has_value());
     EXPECT_EQ(*game.state().sheriffId, 4);
     EXPECT_TRUE(game.state().find(4)->isSheriff);
-    EXPECT_TRUE(hasEvent(dp, "Badge transferred to P4"));
+    EXPECT_TRUE(hasEvent(dp, txt::badgeTransferred("P4")));
 }
 
 TEST(Sheriff, BadgeDestroyedWhenSheriffDies) {
@@ -124,7 +125,7 @@ TEST(Sheriff, BadgeDestroyedWhenSheriffDies) {
     Game game(mkBoard("destroy", {{RoleKind::Werewolf, 2}, {RoleKind::Civilian, 3}}), dp);
     game.run();
     EXPECT_FALSE(game.state().sheriffId.has_value());
-    EXPECT_TRUE(hasEvent(dp, "Badge destroyed"));
+    EXPECT_TRUE(hasEvent(dp, txt::badgeDestroyed()));
 }
 
 TEST(Sheriff, TransferHappensBeforeHunterShot) {
@@ -141,8 +142,9 @@ TEST(Sheriff, TransferHappensBeforeHunterShot) {
     EXPECT_EQ(game.run(), GameResult::TownWins);
 
     // Badge transfer must be logged before the wolf is shot.
-    auto transfer = std::find(dp.events.begin(), dp.events.end(), "Badge transferred to P3");
-    auto shot = std::find(dp.events.begin(), dp.events.end(), "P1 is out (Shot)");
+    auto transfer = std::find(dp.events.begin(), dp.events.end(), txt::badgeTransferred("P3"));
+    auto shot = std::find(dp.events.begin(), dp.events.end(),
+                          txt::out("P1", txt::cause(DeathCause::Shot)));
     ASSERT_NE(transfer, dp.events.end());
     ASSERT_NE(shot, dp.events.end());
     EXPECT_LT(transfer - dp.events.begin(), shot - dp.events.begin());
@@ -163,8 +165,8 @@ TEST(Sheriff, SelfDestructInterruptsElectionThenDefersToDay2) {
     EXPECT_EQ(game.run(), GameResult::WolfWins);
 
     EXPECT_TRUE(game.state().find(1)->hasDeathCause(DeathCause::BlownUp));
-    EXPECT_TRUE(hasEvent(dp, "Sheriff election (deferred, vote only)"));
-    EXPECT_TRUE(hasEvent(dp, "P3 becomes sheriff"));
+    EXPECT_TRUE(hasEvent(dp, txt::electionDeferred()));
+    EXPECT_TRUE(hasEvent(dp, txt::becomesSheriff("P3")));
     ASSERT_TRUE(game.state().sheriffId.has_value());
     EXPECT_EQ(*game.state().sheriffId, 3);
 }

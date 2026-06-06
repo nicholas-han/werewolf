@@ -31,7 +31,9 @@ void NightKill::actAtNight(NightContext& ctx, GameState& state, Player& /*owner*
 
 void Inspect::actAtNight(NightContext& /*ctx*/, GameState& state, Player& owner,
                          DecisionProvider& provider) {
-    std::vector<int> candidates = aliveIds(state, owner.id());
+    // The seer may inspect anyone alive, including themselves (rules-allowed,
+    // even if nobody actually would).
+    std::vector<int> candidates = aliveIds(state);
     std::optional<int> target = provider.chooseInspect(state, owner.id(), candidates);
     if (!target) return;
     const Player* t = state.find(*target);

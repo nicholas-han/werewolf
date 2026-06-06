@@ -12,6 +12,7 @@
 #include "core/game_state.h"
 #include "core/player.h"
 #include "flow/game.h"
+#include "core/messages.h"
 #include "io/scripted_decision_provider.h"
 
 using namespace ww;
@@ -205,10 +206,11 @@ TEST(Game, SelfDestructEndsDayWithNoVote) {
     EXPECT_EQ(game.run(), GameResult::WolfWins);
     EXPECT_TRUE(game.state().find(1)->hasDeathCause(DeathCause::BlownUp));
 
-    // Day 1 went straight to the self-destruct: the event right after "Day 1
-    // begins" is P1 blowing up, with no exile vote in between (§2/§5.3).
-    auto it = std::find(dp.events.begin(), dp.events.end(), "Day 1 begins");
-    ASSERT_NE(it, dp.events.end());
-    ASSERT_NE(it + 1, dp.events.end());
-    EXPECT_EQ(*(it + 1), "P1 is out (BlownUp)");
+    // Day 1 went straight to the self-destruct, before any exile vote (§2/§5.3):
+    // the BlownUp death must precede the first "【放逐投票】" header (day 2's).
+    auto blown = std::find(dp.events.begin(), dp.events.end(), txt::out("P1", txt::cause(DeathCause::BlownUp)));
+    ASSERT_NE(blown, dp.events.end());
+    auto firstVote = std::find(dp.events.begin(), dp.events.end(), "【放逐投票】");
+    EXPECT_TRUE(firstVote == dp.events.end() ||
+                (blown - dp.events.begin()) < (firstVote - dp.events.begin()));
 }

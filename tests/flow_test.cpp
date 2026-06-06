@@ -142,7 +142,7 @@ TEST(Game, TieGoesToRunoffThenNoExile) {
     // The decisive assertion: day 1's tie exiled nobody.
     bool noExileLogged = false;
     for (const std::string& e : provider.events) {
-        if (e == "No exile this round") noExileLogged = true;
+        if (e.find("本轮无人出局") != std::string::npos) noExileLogged = true;
     }
     EXPECT_TRUE(noExileLogged);
 

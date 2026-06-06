@@ -1,5 +1,8 @@
 #include "core/game_state.h"
 
+#include <cstddef>
+#include <map>
+
 #include "core/roles/role.h"
 
 namespace ww {
@@ -70,6 +73,24 @@ GameState buildInitialState(const Board& board) {
         }
     }
     return state;
+}
+
+GameState buildInitialState(const Board& board, const std::vector<RoleKind>& seatRoles) {
+    GameState state;
+    for (std::size_t i = 0; i < seatRoles.size(); ++i) {
+        const int seat = static_cast<int>(i) + 1;
+        state.players.emplace_back(seat, "P" + std::to_string(seat), seat,
+                                   makeRole(seatRoles[i], board.config));
+    }
+    return state;
+}
+
+bool seatRolesMatchRoster(const Board& board, const std::vector<RoleKind>& seatRoles) {
+    std::map<RoleKind, int> need;
+    for (const RoleSlot& slot : board.roster) need[slot.kind] += slot.count;
+    std::map<RoleKind, int> have;
+    for (RoleKind r : seatRoles) have[r] += 1;
+    return need == have;
 }
 
 }  // namespace ww

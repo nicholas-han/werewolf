@@ -24,6 +24,10 @@ struct SheriffBallot {
     std::optional<int> target;       // required if consolidateSingle
 };
 
+// Direction the sheriff opens the speaking order in (BRD §7.1.2). Left = toward
+// the next-higher seat (wrapping), Right = toward the next-lower seat.
+enum class SpeechDirection { Left, Right };
+
 class DecisionProvider {
 public:
     virtual ~DecisionProvider() = default;
@@ -103,10 +107,23 @@ public:
         (void)state; (void)sheriffId; (void)candidates; return std::nullopt;
     }
 
+    // Sheriff opens the day's speaking order (BRD §7.1.2). `anchorSeat` is the
+    // lone night-victim's seat when `singleDeath` is true, else the sheriff's
+    // own seat. Cosmetic cue (no mechanical effect). Default = Left.
+    virtual SpeechDirection chooseSpeechDirection(const GameState& state, int sheriffId,
+                                                  int anchorSeat, bool singleDeath) {
+        (void)state; (void)sheriffId; (void)anchorSeat; (void)singleDeath;
+        return SpeechDirection::Left;
+    }
+
     // Directed result delivered privately to the seer (BRD §11).
     virtual void onInspectResult(int seerId, int targetId, bool isWolf) {
         (void)seerId; (void)targetId; (void)isWolf;
     }
+
+    // Pacing hook for a human moderator (BRD M5 ⑤): block until the operator is
+    // ready to continue. No-op for scripted/bot providers.
+    virtual void pause(const std::string& note) { (void)note; }
 
     // Directed/broadcast notification for UI / observers / logging (BRD §11).
     // M1 uses it as a simple broadcast log; per-player targeting comes later.

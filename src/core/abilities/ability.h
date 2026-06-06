@@ -45,6 +45,9 @@ class NightActor {
 public:
     virtual ~NightActor() = default;
     virtual int nightOrder() const = 0;  // lower acts earlier
+    // Moderator narration label for this role group, e.g. "狼人" / "预言家" / "女巫"
+    // (BRD M5 ⑤): used to cue "<role>请睁眼 / 请闭眼" around the action.
+    virtual std::string nightCue() const = 0;
     virtual void actAtNight(NightContext& ctx, GameState& state, Player& owner,
                             DecisionProvider& provider) = 0;
 };
