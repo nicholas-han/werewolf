@@ -16,6 +16,8 @@ add_library(werewolf_core
     src/core/board.cpp
     src/core/game_state.cpp
     src/flow/win_condition.cpp
+    src/flow/settlement.cpp
+    src/flow/paidao.cpp
     src/flow/game.cpp
     src/io/console_decision_provider.cpp
 )
@@ -57,6 +59,9 @@ if(WEREWOLF_BUILD_TESTS)
     add_executable(judge_test tests/judge_test.cpp)
     target_link_libraries(judge_test PRIVATE werewolf_core GTest::gtest_main)
 
+    add_executable(sandbox_test tests/sandbox_test.cpp)
+    target_link_libraries(sandbox_test PRIVATE werewolf_core GTest::gtest_main)
+
     include(GoogleTest)
     gtest_discover_tests(core_test)
     gtest_discover_tests(flow_test)
@@ -64,4 +69,5 @@ if(WEREWOLF_BUILD_TESTS)
     gtest_discover_tests(sheriff_test)
     gtest_discover_tests(console_test)
     gtest_discover_tests(judge_test)
+    gtest_discover_tests(sandbox_test)
 endif()

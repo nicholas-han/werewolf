@@ -49,7 +49,8 @@ Game::Game(Board board, DecisionProvider& provider,
            std::optional<std::vector<RoleKind>> seatRoles)
     : board_(std::move(board)),
       provider_(provider),
-      state_(seatRoles ? buildInitialState(board_, *seatRoles) : buildInitialState(board_)) {}
+      state_(seatRoles ? buildInitialState(board_, *seatRoles) : buildInitialState(board_)),
+      settlement_(state_, board_.config, provider_) {}
 
 std::vector<int> Game::aliveIds() const {
     std::vector<int> ids;
@@ -67,82 +68,6 @@ std::vector<int> Game::aliveWolfIds() const {
     return ids;
 }
 
-void Game::announceDeath(const Player& p) {
-    std::string causes;
-    for (DeathCause c : p.deathCauses()) {
-        if (!causes.empty()) causes += "+";
-        causes += txt::cause(c);
-    }
-    provider_.notify(txt::out(p.name(), causes));
-}
-
-std::vector<Player*> Game::recordDeaths(const std::vector<PendingDeath>& batch) {
-    std::vector<Player*> newly;
-    for (const PendingDeath& pd : batch) {
-        Player* p = state_.find(pd.playerId);
-        if (p == nullptr) continue;
-        const bool wasAlive = p->isAlive();
-        p->recordDeath(pd.cause, state_.day, state_.phase);  // accumulates causes (同刀同毒, §5.2)
-        if (wasAlive) newly.push_back(p);
-    }
-    return newly;
-}
-
-void Game::maybeTransferBadge(Player& dead) {
-    if (!state_.sheriffId || *state_.sheriffId != dead.id()) return;
-
-    // §7.6: transfer happens at the death; the dead holder loses the badge first.
-    dead.isSheriff = false;
-    std::vector<int> candidates = aliveIds();  // dead is already Out -> excluded
-    std::optional<int> heir = provider_.chooseBadgeTransfer(state_, dead.id(), candidates);
-
-    Player* newHolder = heir ? state_.find(*heir) : nullptr;
-    if (newHolder != nullptr && newHolder->isAlive()) {
-        state_.sheriffId = newHolder->id();
-        newHolder->isSheriff = true;
-        provider_.notify(txt::badgeTransferred(newHolder->name()));
-    } else {
-        state_.sheriffId.reset();  // torn up (撕毁) -> no sheriff for the rest (§7.6)
-        provider_.notify(txt::badgeDestroyed());
-    }
-}
-
-GameResult Game::resolveDeaths(std::deque<Player*> worklist) {
-    std::sort(worklist.begin(), worklist.end(),
-              [](const Player* a, const Player* b) { return a->seat() < b->seat(); });
-
-    while (!worklist.empty()) {
-        Player* dead = worklist.front();
-        worklist.pop_front();
-
-        announceDeath(*dead);
-        if (hasLastWords(*dead)) {  // ② §5.3 last-words cue
-            provider_.notify(txt::lastWordsCue(dead->name()));
-            provider_.pause(txt::lastWordsPause(dead->name()));  // ⑤ pacing for last words
-        }
-        maybeTransferBadge(*dead);  // §7.6: transfer before death-triggered skills
-
-        if (GameResult r = evaluateWin(state_, board_.config); r != GameResult::Ongoing) {
-            return r;  // §4.2: decided -> stop, no further triggers
-        }
-
-        for (const auto& ability : dead->role().abilities()) {
-            auto* trigger = dynamic_cast<DeathTrigger*>(ability.get());
-            if (trigger == nullptr) continue;
-            std::vector<PendingDeath> triggered;
-            trigger->onDeath(state_, *dead, provider_, triggered);
-            for (const PendingDeath& td : triggered) {
-                Player* t = state_.find(td.playerId);
-                if (t == nullptr) continue;
-                const bool wasAlive = t->isAlive();
-                t->recordDeath(td.cause, state_.day, state_.phase);
-                if (wasAlive) worklist.push_back(t);
-            }
-        }
-    }
-    return GameResult::Ongoing;
-}
-
 GameResult Game::announceNightDeaths() {
     if (pendingNightDeaths_.empty()) {
         provider_.notify(txt::peacefulNight());  // peaceful night cue
@@ -154,13 +79,7 @@ GameResult Game::announceNightDeaths() {
         if (Player* p = state_.find(id)) worklist.push_back(p);
     }
     pendingNightDeaths_.clear();
-    return resolveDeaths(std::move(worklist));
-}
-
-GameResult Game::settleImmediate(std::vector<PendingDeath> batch) {
-    std::vector<Player*> newly = recordDeaths(batch);
-    std::deque<Player*> worklist(newly.begin(), newly.end());
-    return resolveDeaths(std::move(worklist));
+    return settlement_.resolveRecorded(std::move(worklist));
 }
 
 std::string Game::moderatorStatus() const {
@@ -286,15 +205,14 @@ GameResult Game::runNight() {
         batch.push_back({*ctx.poisonTarget, DeathCause::Poisoned});
     }
 
-    std::vector<Player*> newly = recordDeaths(batch);
+    std::vector<Player*> newly = settlement_.record(batch);
 
-    // Win check on the direct night deaths (§4.2). If decided, the game ends now
-    // with no triggers (e.g. the last townsfolk is knifed -> hunter never shoots).
-    if (GameResult r = evaluateWin(state_, board_.config); r != GameResult::Ongoing) {
-        std::sort(newly.begin(), newly.end(),
-                  [](const Player* a, const Player* b) { return a->seat() < b->seat(); });
-        for (const Player* p : newly) announceDeath(*p);
-        return r;
+    // Win check on the direct night deaths (§4.2). If decided, the game ends now:
+    // announce them (resolveRecorded returns at the win check before any triggers,
+    // so e.g. a knifed last-townsfolk ends it and the hunter never shoots).
+    if (evaluateWin(state_, board_.config) != GameResult::Ongoing) {
+        provider_.notify(txt::announceHeader());
+        return settlement_.resolveRecorded(std::deque<Player*>(newly.begin(), newly.end()));
     }
 
     // Otherwise defer announcement + triggers to the day (§7.2 / §2).
@@ -354,7 +272,7 @@ Game::ElectionOutcome Game::runSheriffElection() {
                 if (GameResult r = announceNightDeaths(); r != GameResult::Ongoing) {
                     return {r, false};
                 }
-                GameResult r = settleImmediate({{*sd, DeathCause::BlownUp}});
+                GameResult r = settlement_.apply({{*sd, DeathCause::BlownUp}});
                 return {r, r == GameResult::Ongoing};
             }
         }
@@ -526,7 +444,7 @@ GameResult Game::runDay() {
         const std::vector<int> wolves = aliveWolfIds();
         if (!wolves.empty()) {
             if (std::optional<int> sd = provider_.chooseSelfDestruct(state_, wolves)) {
-                return settleImmediate({{*sd, DeathCause::BlownUp}});
+                return settlement_.apply({{*sd, DeathCause::BlownUp}});
             }
         }
     }
@@ -534,7 +452,7 @@ GameResult Game::runDay() {
     // Exile vote (§6 + §7.1 归票).
     provider_.notify(txt::voteTransition());
     if (std::optional<int> exiled = resolveExile()) {
-        return settleImmediate({{*exiled, DeathCause::Exiled}});
+        return settlement_.apply({{*exiled, DeathCause::Exiled}});
     }
     return evaluateWin(state_, board_.config);
 }
