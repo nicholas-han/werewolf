@@ -20,6 +20,7 @@ add_library(werewolf_core
     src/flow/paidao.cpp
     src/flow/game.cpp
     src/io/console_decision_provider.cpp
+    src/io/pass_and_play_decision_provider.cpp
 )
 target_include_directories(werewolf_core PUBLIC src)
 target_compile_features(werewolf_core PUBLIC cxx_std_20)
@@ -68,6 +69,9 @@ if(WEREWOLF_BUILD_TESTS)
     add_executable(psychic_mechanic_test tests/psychic_mechanic_test.cpp)
     target_link_libraries(psychic_mechanic_test PRIVATE werewolf_core GTest::gtest_main)
 
+    add_executable(pass_and_play_test tests/pass_and_play_test.cpp)
+    target_link_libraries(pass_and_play_test PRIVATE werewolf_core GTest::gtest_main)
+
     include(GoogleTest)
     gtest_discover_tests(core_test)
     gtest_discover_tests(flow_test)
@@ -78,4 +82,5 @@ if(WEREWOLF_BUILD_TESTS)
     gtest_discover_tests(sandbox_test)
     gtest_discover_tests(board12_test)
     gtest_discover_tests(psychic_mechanic_test)
+    gtest_discover_tests(pass_and_play_test)
 endif()

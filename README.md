@@ -18,7 +18,7 @@
 ```bash
 cmake -B build && cmake --build build      # 构建
 ./build/werewolf                           # 启动法官控制台
-ctest --test-dir build --output-on-failure # 跑测试（79 个用例）
+ctest --test-dir build --output-on-failure # 跑测试（83 个用例）
 ```
 
 ## 怎么用（法官视角）
