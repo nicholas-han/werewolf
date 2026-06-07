@@ -21,8 +21,9 @@ enum class DeathCause { Killed, Poisoned, Exiled, Shot, BlownUp };
 // Coarse game phase. Sub-steps are handled by the flow layer (M1+).
 enum class Phase { Night, Day };
 
-// Concrete roles in the first board (BRD §3).
-enum class RoleKind { Werewolf, Seer, Witch, Hunter, Civilian };
+// Concrete roles (BRD §3). 9-player: Werewolf/Seer/Witch/Hunter/Civilian.
+// 12-player adds Guardian (守卫) and WolfGun (狼枪).
+enum class RoleKind { Werewolf, Seer, Witch, Hunter, Civilian, Guardian, WolfGun };
 
 // --- Board config option enums (BRD §3) ---
 
@@ -80,6 +81,8 @@ constexpr std::string_view to_string(RoleKind r) {
         case RoleKind::Witch: return "Witch";
         case RoleKind::Hunter: return "Hunter";
         case RoleKind::Civilian: return "Civilian";
+        case RoleKind::Guardian: return "Guardian";
+        case RoleKind::WolfGun: return "WolfGun";
     }
     return "?";
 }

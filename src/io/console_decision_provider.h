@@ -23,6 +23,7 @@ public:
     std::optional<int> chooseNightKill(const GameState&, const std::vector<int>&) override;
     std::optional<int> chooseVote(const GameState&, int, const std::vector<int>&) override;
     std::optional<int> chooseInspect(const GameState&, int, const std::vector<int>&) override;
+    std::optional<int> chooseGuard(const GameState&, int, const std::vector<int>&) override;
     bool chooseWitchSave(const GameState&, int, int) override;
     std::optional<int> chooseWitchPoison(const GameState&, int, const std::vector<int>&) override;
     std::optional<int> chooseHunterShot(const GameState&, int, const std::vector<int>&) override;

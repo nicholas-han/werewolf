@@ -198,8 +198,14 @@ GameResult Game::runNight() {
     if (!openCue.empty()) provider_.notify(txt::closeEyes(openCue));
 
     std::vector<PendingDeath> batch;
-    if (ctx.wolfTarget && ctx.savedTarget != ctx.wolfTarget) {
-        batch.push_back({*ctx.wolfTarget, DeathCause::Killed});
+    if (ctx.wolfTarget) {
+        // §5.2: the knifed target dies iff guard and antidote *agree* — both act
+        // (同守同救) or neither acts. Exactly one of them acting saves the target.
+        const bool guarded = ctx.guardTarget && *ctx.guardTarget == *ctx.wolfTarget;
+        const bool witchSaved = ctx.savedTarget && *ctx.savedTarget == *ctx.wolfTarget;
+        if (guarded == witchSaved) {
+            batch.push_back({*ctx.wolfTarget, DeathCause::Killed});
+        }
     }
     if (ctx.poisonTarget) {
         batch.push_back({*ctx.poisonTarget, DeathCause::Poisoned});

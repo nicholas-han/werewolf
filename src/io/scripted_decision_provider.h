@@ -24,6 +24,7 @@ public:
     std::deque<std::optional<int>> witchPoisons;
     std::deque<std::optional<int>> hunterShots;
     std::deque<std::optional<int>> selfDestructs;
+    std::deque<std::optional<int>> guards;
 
     // Sheriff election (BRD §7).
     std::deque<bool> runForSheriff;
@@ -49,6 +50,11 @@ public:
     std::optional<int> chooseInspect(const GameState&, int,
                                      const std::vector<int>&) override {
         return popOpt(inspects);
+    }
+
+    std::optional<int> chooseGuard(const GameState&, int,
+                                   const std::vector<int>&) override {
+        return popOpt(guards);
     }
 
     bool chooseWitchSave(const GameState&, int, int) override {

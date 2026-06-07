@@ -24,4 +24,20 @@ Board makeBoard9_SeerWitchHunter() {
     return board;
 }
 
+Board makeBoard12_GuardWolfGun() {
+    Board board;
+    board.name = "Board12_GuardWolfGun";
+    board.roster = {
+        {RoleKind::Werewolf, 3},
+        {RoleKind::WolfGun, 1},
+        {RoleKind::Seer, 1},
+        {RoleKind::Witch, 1},
+        {RoleKind::Hunter, 1},
+        {RoleKind::Guardian, 1},
+        {RoleKind::Civilian, 4},
+    };
+    // Defaults match BRD §3: KillSide, witch never self-rescue, guard no-consecutive.
+    return board;
+}
+
 }  // namespace ww

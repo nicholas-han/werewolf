@@ -35,6 +35,7 @@ struct PendingDeath {
 // choices (e.g. the witch must know who the wolves knifed, BRD §2/§5.1).
 struct NightContext {
     bool wolvesActed = false;
+    std::optional<int> guardTarget;   // player protected by the guardian (空守 = unset)
     std::optional<int> wolfTarget;    // who the wolves chose to knife (空刀 = unset)
     std::optional<int> savedTarget;   // player rescued by the witch's antidote
     std::optional<int> poisonTarget;  // player hit by the witch's poison

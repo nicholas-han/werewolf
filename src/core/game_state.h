@@ -27,6 +27,10 @@ public:
     bool witchAntidoteAvailable = true;
     bool witchPoisonAvailable = true;
 
+    // Guardian's previous-night protect target (BRD §2: no two nights in a row).
+    // Empty = nobody protected last night (or no guardian).
+    std::optional<int> lastGuardedId;
+
     // Event / history log.
     std::vector<std::string> log;
 
@@ -40,6 +44,7 @@ public:
         std::optional<int> sheriffId;
         bool witchAntidoteAvailable;
         bool witchPoisonAvailable;
+        std::optional<int> lastGuardedId;
         std::size_t logSize;
     };
     Snapshot snapshot() const;

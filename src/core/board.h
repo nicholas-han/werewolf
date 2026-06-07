@@ -18,6 +18,7 @@ struct BoardConfig {
     bool blownUpEnabled = true;
     bool abstainAllowed = true;
     ExileTieRule exileTieRule = ExileTieRule::RunoffThenNoExile;
+    bool guardConsecutiveSameTarget = false;  // guardian may NOT protect the same player twice (§2)
 };
 
 // One entry of the roster: `count` players of `kind`.
@@ -38,5 +39,9 @@ struct Board {
 // First board: 9-player Seer/Witch/Hunter (BRD §3).
 // 3 Werewolf + 3 Civilian + Seer + Witch + Hunter.
 Board makeBoard9_SeerWitchHunter();
+
+// Second board: 12-player Guard + WolfGun (BRD §3).
+// 3 Werewolf + WolfGun + Seer + Witch + Hunter + Guardian + 4 Civilian.
+Board makeBoard12_GuardWolfGun();
 
 }  // namespace ww

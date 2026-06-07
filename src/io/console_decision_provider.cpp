@@ -7,6 +7,7 @@
 #include <string>
 
 #include "core/game_state.h"
+#include "core/messages.h"
 #include "core/player.h"
 
 namespace ww {
@@ -128,6 +129,12 @@ std::optional<int> ConsoleDecisionProvider::chooseInspect(const GameState& state
     return promptOptional("【夜晚】预言家 " + nameOf(state, seerId) + " 请查验", state, candidates);
 }
 
+std::optional<int> ConsoleDecisionProvider::chooseGuard(const GameState& state, int guardId,
+                                                        const std::vector<int>& candidates) {
+    return promptOptional("【夜晚】守卫 " + nameOf(state, guardId) + " 请守护（可空守）", state,
+                          candidates);
+}
+
 bool ConsoleDecisionProvider::chooseWitchSave(const GameState& state, int witchId, int knifedId) {
     return promptYesNo("【夜晚】女巫 " + nameOf(state, witchId) + "，今晚 " + nameOf(state, knifedId) +
                        " 被刀，是否使用解药？");
@@ -139,10 +146,13 @@ std::optional<int> ConsoleDecisionProvider::chooseWitchPoison(const GameState& s
                           candidates);
 }
 
-std::optional<int> ConsoleDecisionProvider::chooseHunterShot(const GameState& state, int hunterId,
+std::optional<int> ConsoleDecisionProvider::chooseHunterShot(const GameState& state, int shooterId,
                                                              const std::vector<int>& candidates) {
-    return promptOptional("【死亡结算】猎人 " + nameOf(state, hunterId) + " 是否开枪带人", state,
-                          candidates);
+    // Serves any death-triggered shot (hunter / wolfgun); name the shooter's role.
+    const Player* p = state.find(shooterId);
+    const std::string role = p ? txt::role(p->role().kind()) : "枪手";
+    return promptOptional("【死亡结算】" + role + " " + nameOf(state, shooterId) + " 是否开枪带人",
+                          state, candidates);
 }
 
 std::optional<int> ConsoleDecisionProvider::chooseSelfDestruct(const GameState& state,
