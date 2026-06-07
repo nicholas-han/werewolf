@@ -40,4 +40,19 @@ Board makeBoard12_GuardWolfGun() {
     return board;
 }
 
+Board makeBoard12_PsychicMechanic() {
+    Board board;
+    board.name = "Board12_PsychicMechanic";
+    board.roster = {
+        {RoleKind::Werewolf, 3},
+        {RoleKind::MechanicWolf, 1},
+        {RoleKind::Psychic, 1},
+        {RoleKind::Witch, 1},
+        {RoleKind::Hunter, 1},
+        {RoleKind::Guardian, 1},
+        {RoleKind::Civilian, 4},
+    };
+    return board;
+}
+
 }  // namespace ww

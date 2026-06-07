@@ -58,6 +58,20 @@ public:
         (void)state; (void)guardId; (void)candidates; return std::nullopt;
     }
 
+    // MechanicWolf learns a living player's role (std::nullopt = don't learn this
+    // night). Global once (BRD §2, psychic board).
+    virtual std::optional<int> chooseMechanicLearn(const GameState& state, int mechanicId,
+                                                   const std::vector<int>& candidates) {
+        (void)state; (void)mechanicId; (void)candidates; return std::nullopt;
+    }
+
+    // MechanicWolf's one-shot 破盾大刀 target (std::nullopt = save it for later).
+    // Only offered when it is the lone wolf and has learned a wolf (BRD §2).
+    virtual std::optional<int> chooseMechanicBigKnife(const GameState& state, int mechanicId,
+                                                      const std::vector<int>& candidates) {
+        (void)state; (void)mechanicId; (void)candidates; return std::nullopt;
+    }
+
     // Witch antidote: rescue the knifed player `knifedId`? Only asked while the
     // antidote is unused (BRD §2 死讯可见性).
     virtual bool chooseWitchSave(const GameState& state, int witchId, int knifedId) {
@@ -126,6 +140,18 @@ public:
     // Directed result delivered privately to the seer (BRD §11).
     virtual void onInspectResult(int seerId, int targetId, bool isWolf) {
         (void)seerId; (void)targetId; (void)isWolf;
+    }
+
+    // Directed result delivered privately to the psychic — the target's exact
+    // role (BRD §2, psychic board; MechanicWolf reports its disguise).
+    virtual void onPsychicResult(int psychicId, int targetId, RoleKind shownRole) {
+        (void)psychicId; (void)targetId; (void)shownRole;
+    }
+
+    // Nightly private gesture to the hunter: whether a shot is currently available
+    // (BRD §2 每晚验枪 / §5.1). Informational only.
+    virtual void onHunterGunCheck(int hunterId, bool canShoot) {
+        (void)hunterId; (void)canShoot;
     }
 
     // Pacing hook for a human moderator (BRD M5 ⑤): block until the operator is

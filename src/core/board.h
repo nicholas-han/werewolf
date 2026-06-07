@@ -44,4 +44,8 @@ Board makeBoard9_SeerWitchHunter();
 // 3 Werewolf + WolfGun + Seer + Witch + Hunter + Guardian + 4 Civilian.
 Board makeBoard12_GuardWolfGun();
 
+// Third board: 12-player Psychic + MechanicWolf (BRD §3).
+// 3 Werewolf + MechanicWolf + Psychic + Witch + Hunter + Guardian + 4 Civilian.
+Board makeBoard12_PsychicMechanic();
+
 }  // namespace ww

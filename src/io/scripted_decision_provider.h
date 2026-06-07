@@ -4,6 +4,7 @@
 #include <optional>
 #include <string>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 #include "io/decision_provider.h"
@@ -25,6 +26,8 @@ public:
     std::deque<std::optional<int>> hunterShots;
     std::deque<std::optional<int>> selfDestructs;
     std::deque<std::optional<int>> guards;
+    std::deque<std::optional<int>> mechanicLearns;
+    std::deque<std::optional<int>> mechanicBigKnives;
 
     // Sheriff election (BRD §7).
     std::deque<bool> runForSheriff;
@@ -36,6 +39,10 @@ public:
     std::vector<std::string> events;
     // (seerId, targetId, isWolf) captured per inspection.
     std::vector<std::tuple<int, int, bool>> inspectResults;
+    // (psychicId, targetId, shownRole) captured per psychic check.
+    std::vector<std::tuple<int, int, RoleKind>> psychicResults;
+    // (hunterId, canShoot) captured per nightly gun-check.
+    std::vector<std::pair<int, bool>> hunterGunChecks;
 
     std::optional<int> chooseNightKill(const GameState&,
                                        const std::vector<int>&) override {
@@ -55,6 +62,16 @@ public:
     std::optional<int> chooseGuard(const GameState&, int,
                                    const std::vector<int>&) override {
         return popOpt(guards);
+    }
+
+    std::optional<int> chooseMechanicLearn(const GameState&, int,
+                                           const std::vector<int>&) override {
+        return popOpt(mechanicLearns);
+    }
+
+    std::optional<int> chooseMechanicBigKnife(const GameState&, int,
+                                              const std::vector<int>&) override {
+        return popOpt(mechanicBigKnives);
     }
 
     bool chooseWitchSave(const GameState&, int, int) override {
@@ -105,6 +122,14 @@ public:
 
     void onInspectResult(int seerId, int targetId, bool isWolf) override {
         inspectResults.emplace_back(seerId, targetId, isWolf);
+    }
+
+    void onPsychicResult(int psychicId, int targetId, RoleKind shownRole) override {
+        psychicResults.emplace_back(psychicId, targetId, shownRole);
+    }
+
+    void onHunterGunCheck(int hunterId, bool canShoot) override {
+        hunterGunChecks.emplace_back(hunterId, canShoot);
     }
 
     void notify(const std::string& message) override { events.push_back(message); }
