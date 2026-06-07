@@ -9,6 +9,7 @@
 #include "core/board.h"
 #include "core/enums.h"
 #include "core/game_state.h"
+#include "flow/settlement.h"
 #include "flow/win_condition.h"
 #include "io/decision_provider.h"
 
@@ -36,6 +37,7 @@ private:
     Board board_;
     DecisionProvider& provider_;
     GameState state_;
+    Settlement settlement_;
 
     // Night deaths recorded but not yet announced (awaiting the day's 公布死讯).
     std::vector<int> pendingNightDeaths_;
@@ -58,23 +60,10 @@ private:
     // Announces the pending night deaths and resolves their triggers (§5.3/§2).
     GameResult announceNightDeaths();
 
-    // Records + announces + triggers a same-day death batch (exile, self-destruct).
-    GameResult settleImmediate(std::vector<PendingDeath> batch);
-
-    // Records a batch (no announce/trigger/win-check); returns newly-out players.
-    std::vector<Player*> recordDeaths(const std::vector<PendingDeath>& batch);
-    // Announces + transfers badge + fires triggers for already-recorded deaths,
-    // chaining further deaths with a per-death win check (§4.2).
-    GameResult resolveDeaths(std::deque<Player*> worklist);
-
-    // Sheriff badge handoff/tear-up when the holder dies (BRD §7.6).
-    void maybeTransferBadge(Player& dead);
-
     // Exile vote with the sheriff's 归票 weighting (BRD §6/§7.1).
     std::optional<int> resolveExile();
 
     void electSheriff(int playerId);
-    void announceDeath(const Player& p);
 
     // M5 moderator cues:
     std::string moderatorStatus() const;                 // ④ status board

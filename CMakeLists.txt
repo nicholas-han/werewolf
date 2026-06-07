@@ -16,6 +16,8 @@ add_library(werewolf_core
     src/core/board.cpp
     src/core/game_state.cpp
     src/flow/win_condition.cpp
+    src/flow/settlement.cpp
+    src/flow/paidao.cpp
     src/flow/game.cpp
     src/io/console_decision_provider.cpp
 )
