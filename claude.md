@@ -278,15 +278,17 @@
 ```
 werewolf/
 ├── claude.md          # 本 BRD
+├── README.md          # 上手与玩法说明
 ├── CMakeLists.txt
 ├── src/
-│   ├── core/          # player.h, game_state.*, board.*, enums.h
+│   ├── core/          # player.h, game_state.*, board.*, enums.h, messages.h（中文文案单一来源）
 │   │   ├── roles/     # role.*（轻量 Role + makeRole 组装能力）
 │   │   └── abilities/ # ability.h（基类+钩子）, role_abilities.*（NightKill/Inspect/WitchPotions/HunterShot）
-│   ├── flow/          # game.*（Game 编排：夜/昼/竞选/结算）, win_condition.*
-│   ├── io/            # decision_provider.h, scripted_decision_provider.h, console_decision_provider.*
-│   └── app/           # main.cpp（命令行入口）
-└── tests/             # core/flow/roles/sheriff/console_test.cpp（GoogleTest，含整局确定性测试）
+│   ├── flow/          # game.*（编排：夜/昼/竞选）, settlement.*（死亡结算核心）,
+│   │                  #   win_condition.*, last_words.h, speech_order.h, paidao.*（拍刀沙盒）
+│   ├── io/            # decision_provider.h, scripted_/console_decision_provider.*
+│   └── app/           # main.cpp（命令行入口：发牌方式 + 主持整局）
+└── tests/             # core/flow/roles/sheriff/console/judge/sandbox_test.cpp（GoogleTest，58 用例）
 ```
 
 ## 13. 技术栈与约定
@@ -310,17 +312,22 @@ werewolf/
   3. ✅ **M2** 角色技能：狼刀 / 查验 / 解毒 / 猎人开枪 / 自爆（能力组件 `Ability` + 死亡触发连锁）。
   4. ✅ **M3** 警长竞选与警徽移交（§7，含归票 1.5 票、自爆中断/顺延、忠实的「夜结算/昼公布」拆分）。
   5. ✅ **M4** `ConsoleDecisionProvider` + `app/main.cpp`：真人终端可玩一局。
-  6. ⬜ **M5（进阶）** 拍刀沙盒推演（§4.4）：基于**可回滚 GameState** 的提前结算。
-- **当前状态**：M0–M4 已完成并合入 `main`；GoogleTest 共 43 个用例全绿；`./build/werewolf` 可玩。
-- **尚未实现（已在规则中定义，待后续里程碑）**：拍刀提前结算（§4.4，需可回滚 GameState）；「按玩家定向隐藏信息」目前控制台为单屏 moderator 模式（§11 完整实现待 per-player 通道）。
+  6. ✅ **M5** 法官模式：开局录入身份、状态面板、遗言/发言顺序 cue、睁眼闭眼/发言阶段叙述与停顿、清晰票数公布；全部法官文案集中到 `messages.h` 并中文化。
+  7. ✅ **M6** 随机发牌 + 无警长时按系统时间随机决定发言方向/首发言者。
+  8. ⏳ **M7** 拍刀沙盒推演（§4.4）：
+     - ✅ 阶段 A 可回滚 `GameState`（快照/恢复）。
+     - ✅ 阶段 B 指定线推演（`Settlement` 复用 + `sandboxClone` + `simulatePaidaoLine`）。
+     - ⬜ 阶段 C 好人「开卷最优」自动搜索（暂缓）。
+- **当前状态**：M0–M6 已合入 `main`；M7 阶段 A/B 在 `m7-paidao-sandbox` 分支；GoogleTest 共 **58** 个用例全绿；`./build/werewolf` 可主持整局。
+- **尚未实现（已在规则中定义，待后续）**：拍刀阶段 C 自动最优搜索（§4.4）；「按玩家定向隐藏信息」目前控制台为单屏 moderator 模式（§11 完整实现待 per-player 通道）。
 - **后续待定义（用户提供）**：其它板子（12 人预女猎白、含守卫/丘比特等）、更多角色、屠城板、遗言细则、平票变体。
 
 ### 产品形态路线图（远期，先记录后做）
 
 当前程序是「**法官单机工具**」：法官一人操作，cue 完整流程、录入玩家行为、引擎判定。后续逐步演进为多人/AI 对战平台：
 
-1. **法官模式（进行中）**：开局录入身份、状态面板、遗言/发言顺序 cue、主持叙述与节奏停顿。让法官拿着一台机器即可主持整局。
-2. **随机发牌**：程序随机分配身份（替代手动录入），法官只看分配结果。
+1. ✅ **法官模式**：开局录入身份、状态面板、遗言/发言顺序 cue、主持叙述与节奏停顿。让法官拿着一台机器即可主持整局。
+2. ✅ **随机发牌**：程序随机分配身份（替代手动录入），法官只看分配结果。
 3. **多人联机**：法官 + 各玩家各自通过程序（多端/网络）参与，**每个玩家只看到自己被允许的信息**（真正落地 §11 的「按玩家定向下发」，不再是单屏 moderator 模式）。
 4. **发言记录**：支持玩家发言（文本/语音转写），程序为每位玩家**留存发言记录**，可复盘。
 5. **AI Agent 玩家**：可接入不同 AI agent 作为玩家加入对局，与真人/彼此博弈（复用 `DecisionProvider` 接口：`BotDecisionProvider` / `AgentDecisionProvider`）。
