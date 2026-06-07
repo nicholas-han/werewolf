@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <optional>
 #include <string>
 #include <vector>
@@ -28,6 +29,21 @@ public:
 
     // Event / history log.
     std::vector<std::string> log;
+
+    // Rollbackable snapshot of all mutable state (BRD §4.4 sandbox foundation):
+    // per-player status + the game-level potion/sheriff/phase/day, plus the log
+    // length so sandbox narration can be trimmed away on restore.
+    struct Snapshot {
+        std::vector<Player::Snapshot> players;
+        Phase phase;
+        int day;
+        std::optional<int> sheriffId;
+        bool witchAntidoteAvailable;
+        bool witchPoisonAvailable;
+        std::size_t logSize;
+    };
+    Snapshot snapshot() const;
+    void restore(const Snapshot& snap);
 
     Player* find(int id);
     const Player* find(int id) const;

@@ -52,6 +52,32 @@ public:
                deathCauses_.end();
     }
 
+    // Captures/restores the mutable per-game fields for sandbox rollback (BRD
+    // §4.4). The role/abilities are fixed for the whole game, so they are NOT
+    // part of the snapshot — only this changing state is.
+    struct Snapshot {
+        Status status;
+        std::vector<DeathCause> deathCauses;
+        std::optional<int> deathDay;
+        std::optional<Phase> deathPhase;
+        bool isSheriff;
+        bool guardedTonight;
+        bool poisonedTonight;
+    };
+    Snapshot snapshot() const {
+        return Snapshot{status_,   deathCauses_,    deathDay_,        deathPhase_,
+                        isSheriff, guardedTonight,  poisonedTonight};
+    }
+    void restore(const Snapshot& s) {
+        status_ = s.status;
+        deathCauses_ = s.deathCauses;
+        deathDay_ = s.deathDay;
+        deathPhase_ = s.deathPhase;
+        isSheriff = s.isSheriff;
+        guardedTonight = s.guardedTonight;
+        poisonedTonight = s.poisonedTonight;
+    }
+
     // --- Persistent / transient per-game flags ---
     // Badge holder (BRD §7). Single sheriff at any time is enforced via
     // GameState::sheriffId; this mirror flag is convenience for the flow layer.

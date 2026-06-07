@@ -9,6 +9,32 @@
 
 namespace ww {
 
+GameState::Snapshot GameState::snapshot() const {
+    Snapshot s;
+    s.players.reserve(players.size());
+    for (const Player& p : players) s.players.push_back(p.snapshot());
+    s.phase = phase;
+    s.day = day;
+    s.sheriffId = sheriffId;
+    s.witchAntidoteAvailable = witchAntidoteAvailable;
+    s.witchPoisonAvailable = witchPoisonAvailable;
+    s.logSize = log.size();
+    return s;
+}
+
+void GameState::restore(const Snapshot& snap) {
+    // Player count is fixed across a game, so restore by index.
+    for (std::size_t i = 0; i < players.size() && i < snap.players.size(); ++i) {
+        players[i].restore(snap.players[i]);
+    }
+    phase = snap.phase;
+    day = snap.day;
+    sheriffId = snap.sheriffId;
+    witchAntidoteAvailable = snap.witchAntidoteAvailable;
+    witchPoisonAvailable = snap.witchPoisonAvailable;
+    if (log.size() > snap.logSize) log.resize(snap.logSize);
+}
+
 Player* GameState::find(int id) {
     for (Player& p : players) {
         if (p.id() == id) return &p;
