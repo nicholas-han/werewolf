@@ -18,6 +18,8 @@ inline std::string role(RoleKind r) {
         case RoleKind::Witch: return "女巫";
         case RoleKind::Hunter: return "猎人";
         case RoleKind::Civilian: return "平民";
+        case RoleKind::Guardian: return "守卫";
+        case RoleKind::WolfGun: return "狼枪";
     }
     return "?";
 }

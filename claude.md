@@ -319,12 +319,12 @@ werewolf/
 ├── src/
 │   ├── core/          # player.h, game_state.*, board.*, enums.h, messages.h（中文文案单一来源）
 │   │   ├── roles/     # role.*（轻量 Role + makeRole 组装能力）
-│   │   └── abilities/ # ability.h（基类+钩子）, role_abilities.*（NightKill/Inspect/WitchPotions/HunterShot）
+│   │   └── abilities/ # ability.h（基类+钩子）, role_abilities.*（NightKill/Inspect/WitchPotions/Protect/DeathTriggerShoot）
 │   ├── flow/          # game.*（编排：夜/昼/竞选）, settlement.*（死亡结算核心）,
 │   │                  #   win_condition.*, last_words.h, speech_order.h, paidao.*（拍刀沙盒）
 │   ├── io/            # decision_provider.h, scripted_/console_decision_provider.*
 │   └── app/           # main.cpp（命令行入口：发牌方式 + 主持整局）
-└── tests/             # core/flow/roles/sheriff/console/judge/sandbox_test.cpp（GoogleTest，58 用例）
+└── tests/             # core/flow/roles/sheriff/console/judge/sandbox/board12_test.cpp（GoogleTest，66 用例）
 ```
 
 ## 13. 技术栈与约定
@@ -354,11 +354,11 @@ werewolf/
      - ✅ 阶段 A 可回滚 `GameState`（快照/恢复）。
      - ✅ 阶段 B 指定线推演（`Settlement` 复用 + `sandboxClone` + `simulatePaidaoLine`）。
      - ⬜ 阶段 C 好人「开卷最优」自动搜索（暂缓）。
-  9. ⏳ **M8** 第二个板子：**12 人预女猎守 + 狼枪**（§3）——验证「加板子≈加数据」。
-     - 新角色：守卫 `Protect`（含「不可连守」「同守同救=死」「挡刀不挡毒」「守住被刀女巫」）、狼枪（`DeathTriggerShoot` 参数化禁枪集合 {毒,自爆}）。
-     - 夜晚结算扩展守卫公式（§5.2 `guarded == witchSaved`）；狼可自刀。
-- **当前状态**：M0–M6 已合入 `main`；M7 阶段 A/B 在 `m7-paidao-sandbox` 分支；GoogleTest 共 **58** 个用例全绿；`./build/werewolf` 可主持整局。
-- **尚未实现（已在规则中定义，待后续）**：M8 守卫狼枪板（规则已写入本文档，待编码）；拍刀阶段 C 自动最优搜索（§4.4）；「按玩家定向隐藏信息」目前控制台为单屏 moderator 模式（§11 完整实现待 per-player 通道）。
+  9. ✅ **M8** 第二个板子：**12 人预女猎守 + 狼枪**（§3）——验证「加板子≈加数据」。
+     - 新角色：守卫 `Protect`（「不可连守」「同守同救=死」「挡刀不挡毒」「守住被刀女巫」）、狼枪（`DeathTriggerShoot` 参数化禁枪集合 {毒,自爆}）。
+     - 夜晚结算守卫公式（§5.2 `guarded == witchSaved`）；狼可自刀；`app` 可选 9/12 人板。
+- **当前状态**：M0–M7 已合入 `main`；M8 在 `m8-guard-wolfgun` 分支；GoogleTest 共 **66** 个用例全绿；`./build/werewolf` 可选 9/12 人板主持整局。
+- **尚未实现（已在规则中定义，待后续）**：拍刀阶段 C 自动最优搜索（§4.4）；「按玩家定向隐藏信息」目前控制台为单屏 moderator 模式（§11 完整实现待 per-player 通道）。
 - **后续待定义（用户提供）**：更多板子（12 人预女猎白、丘比特/骑士等）、屠城板、遗言细则、平票变体。
 
 ### 产品形态路线图（远期，先记录后做）

@@ -81,8 +81,13 @@ std::optional<std::vector<RoleKind>> promptSetup(const Board& board, std::istrea
 int main() {
     using namespace ww;
 
-    Board board = makeBoard9_SeerWitchHunter();
-    std::cout << "=== 狼人杀：9 人预女猎（法官控制台）===\n";
+    std::cout << "=== 狼人杀（法官控制台）===\n";
+    std::cout << "选择板子：1) 9 人预女猎  2) 12 人预女猎守 + 狼枪\n> ";
+    std::string choice;
+    std::getline(std::cin, choice);
+    Board board = (!choice.empty() && choice[0] == '2') ? makeBoard12_GuardWolfGun()
+                                                        : makeBoard9_SeerWitchHunter();
+    std::cout << "板子：" << board.name << "（" << board.totalPlayers() << " 人）\n";
 
     std::optional<std::vector<RoleKind>> seatRoles = promptSetup(board, std::cin, std::cout);
 

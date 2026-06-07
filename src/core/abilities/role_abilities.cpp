@@ -58,6 +58,10 @@ void WitchPotions::actAtNight(NightContext& ctx, GameState& state, Player& owner
                 state.witchAntidoteAvailable = false;
                 savedThisNight = true;
             }
+        } else {
+            // She is the knifed one but cannot self-rescue: still tell her she was
+            // knifed (BRD §2 死讯可见性; e.g. a guard may secretly save her).
+            provider.notify("【女巫】你今晚被刀（无法自救）");
         }
     }
 
@@ -74,12 +78,29 @@ void WitchPotions::actAtNight(NightContext& ctx, GameState& state, Player& owner
     }
 }
 
-void HunterShot::onDeath(GameState& state, Player& owner, DecisionProvider& provider,
-                         std::vector<PendingDeath>& out) {
-    // Poison blocks the shot (BRD §2). Any poison cause among the deaths disables
-    // it; the moderator would say only "无法发动技能" without the reason (§11).
-    if (owner.hasDeathCause(DeathCause::Poisoned)) return;
+void Protect::actAtNight(NightContext& ctx, GameState& state, Player& owner,
+                         DecisionProvider& provider) {
+    // Candidates: anyone alive (incl. self / 空守 via std::nullopt), minus last
+    // night's target unless the board allows guarding the same player twice (§2).
+    std::vector<int> candidates;
+    for (const Player& p : state.players) {
+        if (!p.isAlive()) continue;
+        if (!allowConsecutive_ && state.lastGuardedId && *state.lastGuardedId == p.id()) continue;
+        candidates.push_back(p.id());
+    }
+    std::optional<int> target = provider.chooseGuard(state, owner.id(), candidates);
+    ctx.guardTarget = target;
+    state.lastGuardedId = target;  // 空守 -> nullopt -> next night unrestricted
+}
 
+void DeathTriggerShoot::onDeath(GameState& state, Player& owner, DecisionProvider& provider,
+                                std::vector<PendingDeath>& out) {
+    // A blocked death cause forbids the shot (BRD §2: hunter blocked by poison;
+    // wolfgun also by self-destruct). The moderator only says "无法发动技能"
+    // without the reason (§11).
+    for (DeathCause c : blocked_) {
+        if (owner.hasDeathCause(c)) return;
+    }
     std::optional<int> target =
         provider.chooseHunterShot(state, owner.id(), aliveIds(state, owner.id()));
     if (target) {

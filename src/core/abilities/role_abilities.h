@@ -1,15 +1,18 @@
 #pragma once
 
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "core/abilities/ability.h"
 
-// Concrete M2 abilities (BRD §2). Each is a small composable component:
-//   NightKill   — wolves' shared nightly kill (§5.1 step 1)
-//   Inspect     — seer's nightly check (§5.1 step 2)
-//   WitchPotions— antidote + poison with the §2 constraints (§5.1 step 3)
-//   HunterShot  — death-triggered shot, blocked by poison (§2)
+// Concrete role abilities (BRD §2). Each is a small composable component:
+//   NightKill         — wolves' shared nightly kill (§5.1)
+//   Inspect           — seer's nightly check
+//   WitchPotions      — antidote + poison with the §2 constraints
+//   Protect           — guardian's nightly protect (§2, 12-player board)
+//   DeathTriggerShoot — death-triggered shot, parameterised by blocked causes
+//                       (hunter={Poisoned}; wolfgun={Poisoned,BlownUp})
 namespace ww {
 
 // Wolves act as a team: the first wolf processed makes the one kill decision
@@ -48,11 +51,39 @@ private:
     bool bothPotionsSameNight_;
 };
 
-class HunterShot : public Ability, public DeathTrigger {
+// Guardian's nightly protect (§2). Acts before the wolves; records the target in
+// NightContext and updates GameState's last-guarded for the "no two nights in a
+// row" rule. The dawn knife-survival formula (§5.2) lives in the flow.
+class Protect : public Ability, public NightActor {
 public:
-    std::string name() const override { return "HunterShot"; }
+    explicit Protect(bool allowConsecutiveSameTarget)
+        : allowConsecutive_(allowConsecutiveSameTarget) {}
+
+    std::string name() const override { return "Protect"; }
+    int nightOrder() const override { return 5; }  // before the wolves
+    std::string nightCue() const override { return "守卫"; }
+    void actAtNight(NightContext& ctx, GameState& state, Player& owner,
+                    DecisionProvider& provider) override;
+
+private:
+    bool allowConsecutive_;
+};
+
+// Death-triggered shot, reused by Hunter and WolfGun (§2). `blocked` lists the
+// death causes that forbid the shot (hunter: {Poisoned}; wolfgun: {Poisoned,
+// BlownUp}). The shot itself always resolves in daytime via the settlement.
+class DeathTriggerShoot : public Ability, public DeathTrigger {
+public:
+    DeathTriggerShoot(std::string name, std::vector<DeathCause> blocked)
+        : name_(std::move(name)), blocked_(std::move(blocked)) {}
+
+    std::string name() const override { return name_; }
     void onDeath(GameState& state, Player& owner, DecisionProvider& provider,
                  std::vector<PendingDeath>& out) override;
+
+private:
+    std::string name_;
+    std::vector<DeathCause> blocked_;
 };
 
 }  // namespace ww

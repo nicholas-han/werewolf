@@ -26,7 +26,21 @@ std::unique_ptr<Role> makeRole(RoleKind kind, const BoardConfig& config) {
         }
         case RoleKind::Hunter: {
             auto r = std::make_unique<Role>(kind, "Hunter", Faction::Town, SubKind::PowerRole);
-            r->addAbility(std::make_unique<HunterShot>());
+            r->addAbility(std::make_unique<DeathTriggerShoot>(
+                "HunterShot", std::vector<DeathCause>{DeathCause::Poisoned}));
+            return r;
+        }
+        case RoleKind::Guardian: {
+            auto r = std::make_unique<Role>(kind, "Guardian", Faction::Town, SubKind::PowerRole);
+            r->addAbility(std::make_unique<Protect>(config.guardConsecutiveSameTarget));
+            return r;
+        }
+        case RoleKind::WolfGun: {
+            auto r = std::make_unique<Role>(kind, "WolfGun", Faction::Wolf, SubKind::None);
+            r->addAbility(std::make_unique<NightKill>());
+            r->addAbility(std::make_unique<DeathTriggerShoot>(
+                "WolfGunShot",
+                std::vector<DeathCause>{DeathCause::Poisoned, DeathCause::BlownUp}));
             return r;
         }
         case RoleKind::Civilian:

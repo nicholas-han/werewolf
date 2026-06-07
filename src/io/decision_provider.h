@@ -51,6 +51,13 @@ public:
         (void)state; (void)seerId; (void)candidates; return std::nullopt;
     }
 
+    // Guardian protects a player among `candidates` (already excludes last night's
+    // target unless the board allows it); std::nullopt = 空守 (BRD §2, 12-player).
+    virtual std::optional<int> chooseGuard(const GameState& state, int guardId,
+                                           const std::vector<int>& candidates) {
+        (void)state; (void)guardId; (void)candidates; return std::nullopt;
+    }
+
     // Witch antidote: rescue the knifed player `knifedId`? Only asked while the
     // antidote is unused (BRD §2 死讯可见性).
     virtual bool chooseWitchSave(const GameState& state, int witchId, int knifedId) {
