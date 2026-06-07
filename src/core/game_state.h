@@ -34,6 +34,18 @@ public:
     // MechanicWolf's learned role (BRD §2, psychic board). Empty = not yet learned
     // (the psychic then sees it as MechanicWolf). Set once per game.
     std::optional<RoleKind> mechanicLearned;
+    std::optional<int> mechanicLearnDay;        // night it learned (active abilities: day > this)
+    bool mechanicAntidoteAvailable = false;     // independent witch stock (learned 女巫)
+    bool mechanicPoisonAvailable = false;
+    bool mechanicBigKnifeAvailable = false;     // one-shot 破盾大刀 (learned 狼人)
+    std::optional<int> mechanicLastGuardedId;   // mechanic's learned-guard no-consecutive
+
+    // Mechanic's learned active abilities are live only AFTER the learning night
+    // (BRD §2: 学习当晚不发动，下一晚起). Disguise is immediate and not gated here.
+    bool mechanicAbilitiesActive() const {
+        return mechanicLearned.has_value() && mechanicLearnDay.has_value() &&
+               day > *mechanicLearnDay;
+    }
 
     // Event / history log.
     std::vector<std::string> log;
@@ -50,6 +62,11 @@ public:
         bool witchPoisonAvailable;
         std::optional<int> lastGuardedId;
         std::optional<RoleKind> mechanicLearned;
+        std::optional<int> mechanicLearnDay;
+        bool mechanicAntidoteAvailable;
+        bool mechanicPoisonAvailable;
+        bool mechanicBigKnifeAvailable;
+        std::optional<int> mechanicLastGuardedId;
         std::size_t logSize;
     };
     Snapshot snapshot() const;

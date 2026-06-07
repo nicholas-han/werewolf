@@ -198,18 +198,35 @@ GameResult Game::runNight() {
     if (!openCue.empty()) provider_.notify(txt::closeEyes(openCue));
 
     std::vector<PendingDeath> batch;
-    if (ctx.wolfTarget) {
-        // §5.2: the knifed target dies iff guard and antidote *agree* — both act
-        // (同守同救) or neither acts. Exactly one of them acting saves the target.
-        const bool guarded = ctx.guardTarget && *ctx.guardTarget == *ctx.wolfTarget;
-        const bool witchSaved = ctx.savedTarget && *ctx.savedTarget == *ctx.wolfTarget;
-        if (guarded == witchSaved) {
-            batch.push_back({*ctx.wolfTarget, DeathCause::Killed});
+    auto guarded = [&](int x) {
+        return (ctx.guardTarget && *ctx.guardTarget == x) ||
+               (ctx.mechanicGuardTarget && *ctx.mechanicGuardTarget == x);
+    };
+    auto saved = [&](int x) {
+        return (ctx.savedTarget && *ctx.savedTarget == x) ||
+               (ctx.mechSavedTarget && *ctx.mechSavedTarget == x);
+    };
+
+    // 普通刀: dies iff guard and antidote *agree* — both (同守同救) or neither (§5.2).
+    if (ctx.wolfTarget && guarded(*ctx.wolfTarget) == saved(*ctx.wolfTarget)) {
+        batch.push_back({*ctx.wolfTarget, DeathCause::Killed});
+    }
+    // 破盾大刀: ignores the guard; only an antidote could save it (§2).
+    if (ctx.bigKnifeTarget && !saved(*ctx.bigKnifeTarget)) {
+        batch.push_back({*ctx.bigKnifeTarget, DeathCause::Killed});
+    }
+    // Poison: the guard does not block it — EXCEPT the mechanic's learned guard,
+    // which reflects it (the poisoner dies, the protected player lives, §2).
+    auto applyPoison = [&](std::optional<int> tgt, std::optional<int> src) {
+        if (!tgt) return;
+        if (ctx.mechanicGuardTarget && *ctx.mechanicGuardTarget == *tgt && src) {
+            batch.push_back({*src, DeathCause::Poisoned});  // reflected to the poisoner
+        } else {
+            batch.push_back({*tgt, DeathCause::Poisoned});
         }
-    }
-    if (ctx.poisonTarget) {
-        batch.push_back({*ctx.poisonTarget, DeathCause::Poisoned});
-    }
+    };
+    applyPoison(ctx.poisonTarget, ctx.poisonSourceId);
+    applyPoison(ctx.mechPoisonTarget, ctx.mechPoisonSourceId);
 
     std::vector<Player*> newly = settlement_.record(batch);
 

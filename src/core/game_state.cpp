@@ -20,6 +20,11 @@ GameState::Snapshot GameState::snapshot() const {
     s.witchPoisonAvailable = witchPoisonAvailable;
     s.lastGuardedId = lastGuardedId;
     s.mechanicLearned = mechanicLearned;
+    s.mechanicLearnDay = mechanicLearnDay;
+    s.mechanicAntidoteAvailable = mechanicAntidoteAvailable;
+    s.mechanicPoisonAvailable = mechanicPoisonAvailable;
+    s.mechanicBigKnifeAvailable = mechanicBigKnifeAvailable;
+    s.mechanicLastGuardedId = mechanicLastGuardedId;
     s.logSize = log.size();
     return s;
 }
@@ -36,6 +41,11 @@ void GameState::restore(const Snapshot& snap) {
     witchPoisonAvailable = snap.witchPoisonAvailable;
     lastGuardedId = snap.lastGuardedId;
     mechanicLearned = snap.mechanicLearned;
+    mechanicLearnDay = snap.mechanicLearnDay;
+    mechanicAntidoteAvailable = snap.mechanicAntidoteAvailable;
+    mechanicPoisonAvailable = snap.mechanicPoisonAvailable;
+    mechanicBigKnifeAvailable = snap.mechanicBigKnifeAvailable;
+    mechanicLastGuardedId = snap.mechanicLastGuardedId;
     if (log.size() > snap.logSize) log.resize(snap.logSize);
 }
 

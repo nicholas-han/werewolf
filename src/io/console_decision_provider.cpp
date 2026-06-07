@@ -147,6 +147,13 @@ std::optional<int> ConsoleDecisionProvider::chooseMechanicLearn(const GameState&
                           state, candidates);
 }
 
+std::optional<int> ConsoleDecisionProvider::chooseMechanicBigKnife(
+    const GameState& state, int mechanicId, const std::vector<int>& candidates) {
+    return promptOptional("【夜晚】机械狼 " + nameOf(state, mechanicId) +
+                              " 是否发动破盾大刀（一次性，无视守卫；可留待后用）",
+                          state, candidates);
+}
+
 bool ConsoleDecisionProvider::chooseWitchSave(const GameState& state, int witchId, int knifedId) {
     return promptYesNo("【夜晚】女巫 " + nameOf(state, witchId) + "，今晚 " + nameOf(state, knifedId) +
                        " 被刀，是否使用解药？");

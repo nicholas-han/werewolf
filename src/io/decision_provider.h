@@ -65,6 +65,13 @@ public:
         (void)state; (void)mechanicId; (void)candidates; return std::nullopt;
     }
 
+    // MechanicWolf's one-shot 破盾大刀 target (std::nullopt = save it for later).
+    // Only offered when it is the lone wolf and has learned a wolf (BRD §2).
+    virtual std::optional<int> chooseMechanicBigKnife(const GameState& state, int mechanicId,
+                                                      const std::vector<int>& candidates) {
+        (void)state; (void)mechanicId; (void)candidates; return std::nullopt;
+    }
+
     // Witch antidote: rescue the knifed player `knifedId`? Only asked while the
     // antidote is unused (BRD §2 死讯可见性).
     virtual bool chooseWitchSave(const GameState& state, int witchId, int knifedId) {

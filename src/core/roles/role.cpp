@@ -53,6 +53,12 @@ std::unique_ptr<Role> makeRole(RoleKind kind, const BoardConfig& config) {
             auto r = std::make_unique<Role>(kind, "MechanicWolf", Faction::Wolf, SubKind::None);
             r->addAbility(std::make_unique<MechanicLearn>());
             r->addAbility(std::make_unique<MechanicLoneKill>());
+            // Learned-active components — each is inert until the matching role is
+            // learned (and from the next night). Composed once; no runtime mutation.
+            r->addAbility(std::make_unique<MechanicLearnedInspect>());
+            r->addAbility(std::make_unique<MechanicLearnedWitch>(config.witchBothPotionsSameNight));
+            r->addAbility(std::make_unique<MechanicLearnedProtect>(config.guardConsecutiveSameTarget));
+            r->addAbility(std::make_unique<MechanicLearnedShoot>());
             return r;
         }
         case RoleKind::Civilian:

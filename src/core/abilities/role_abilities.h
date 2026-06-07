@@ -101,6 +101,58 @@ public:
                     DecisionProvider& provider) override;
 };
 
+// --- MechanicWolf learned-active abilities (BRD §2; live from the night after
+//     learning, gated by GameState::mechanicAbilitiesActive()). Each is a no-op
+//     unless the mechanic learned the matching role. ---
+
+// Learned 通灵师: nightly inspect of a player's exact role.
+class MechanicLearnedInspect : public Ability, public NightActor {
+public:
+    std::string name() const override { return "MechanicLearnedInspect"; }
+    int nightOrder() const override { return 41; }
+    std::string nightCue() const override { return "机械狼"; }
+    void actAtNight(NightContext& ctx, GameState& state, Player& owner,
+                    DecisionProvider& provider) override;
+};
+
+// Learned 女巫: independent antidote/poison stock (copied at learn time).
+class MechanicLearnedWitch : public Ability, public NightActor {
+public:
+    explicit MechanicLearnedWitch(bool bothPotionsSameNight)
+        : bothPotionsSameNight_(bothPotionsSameNight) {}
+    std::string name() const override { return "MechanicLearnedWitch"; }
+    int nightOrder() const override { return 42; }
+    std::string nightCue() const override { return "机械狼"; }
+    void actAtNight(NightContext& ctx, GameState& state, Player& owner,
+                    DecisionProvider& provider) override;
+
+private:
+    bool bothPotionsSameNight_;
+};
+
+// Learned 守卫: protect with the mechanic-only poison reflect.
+class MechanicLearnedProtect : public Ability, public NightActor {
+public:
+    explicit MechanicLearnedProtect(bool allowConsecutiveSameTarget)
+        : allowConsecutive_(allowConsecutiveSameTarget) {}
+    std::string name() const override { return "MechanicLearnedProtect"; }
+    int nightOrder() const override { return 6; }  // alongside the real guard
+    std::string nightCue() const override { return "机械狼"; }
+    void actAtNight(NightContext& ctx, GameState& state, Player& owner,
+                    DecisionProvider& provider) override;
+
+private:
+    bool allowConsecutive_;
+};
+
+// Learned 猎人: death-triggered shot, blocked by poison (reuses the hunter rule).
+class MechanicLearnedShoot : public Ability, public DeathTrigger {
+public:
+    std::string name() const override { return "MechanicLearnedShoot"; }
+    void onDeath(GameState& state, Player& owner, DecisionProvider& provider,
+                 std::vector<PendingDeath>& out) override;
+};
+
 // Hunter's nightly "can I shoot?" gesture (§2/§5.1, all boards): a private cue to
 // the hunter on whether a shot is currently available (i.e. not being poisoned
 // this night). Informational only — the actual block lives in DeathTriggerShoot.

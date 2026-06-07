@@ -368,7 +368,7 @@ werewolf/
 │   │                  #   win_condition.*, last_words.h, speech_order.h, paidao.*（拍刀沙盒）
 │   ├── io/            # decision_provider.h, scripted_/console_decision_provider.*
 │   └── app/           # main.cpp（命令行入口：发牌方式 + 主持整局）
-└── tests/             # core/flow/roles/sheriff/console/judge/sandbox/board12_test.cpp（GoogleTest，66 用例）
+└── tests/             # core/flow/roles/sheriff/console/judge/sandbox/board12/psychic_mechanic_test.cpp（GoogleTest，79 用例）
 ```
 
 ## 13. 技术栈与约定
@@ -401,11 +401,11 @@ werewolf/
   9. ✅ **M8** 第二个板子：**12 人预女猎守 + 狼枪**（§3）——验证「加板子≈加数据」。
      - 新角色：守卫 `Protect`（「不可连守」「同守同救=死」「挡刀不挡毒」「守住被刀女巫」）、狼枪（`DeathTriggerShoot` 参数化禁枪集合 {毒,自爆}）。
      - 夜晚结算守卫公式（§5.2 `guarded == witchSaved`）；狼可自刀；`app` 可选 9/12 人板。
-  10. ⬜ **M9** 第三个板子：**12 人通灵机械狼**（§2/§3，规则已定稿）——能力体系的极限检验。
-      - 新角色：通灵师（查具体身份）、机械狼（运行时学习身份/独立药水/破盾大刀/反弹守卫/伪装/不睁眼狼）。
+  10. ✅ **M9** 第三个板子：**12 人通灵机械狼**（§2/§3）——能力体系的极限检验。
+      - 通灵师（查具体身份）；机械狼：运行时学习身份（条件能力组件，非动态改 Role）、伪装（信息钩子、当晚即生效）、独立刀、破盾大刀（一次性、双刀）、独立药水副本、反弹守卫、学猎/学通、下一晚生效（`mechanicAbilitiesActive()`）、不睁眼狼（`countAliveOpenWolves()`）。
       - 配套：猎人每晚开枪手势通知（§5.1）；自爆狼当夜参与讨论的澄清（§2，无机制影响）。
-- **当前状态**：M0–M7 已合入 `main`；M8 在 `m8-guard-wolfgun` 分支；GoogleTest 共 **66** 个用例全绿；`./build/werewolf` 可选 9/12 人板主持整局。
-- **尚未实现（已在规则中定义，待后续）**：M9 通灵机械狼板（规则已写入本文档，待编码）；拍刀阶段 C 自动最优搜索（§4.4）；「按玩家定向隐藏信息」目前控制台为单屏 moderator 模式（§11 完整实现待 per-player 通道）。
+- **当前状态**：M0–M8 已合入 `main`；M9 在 `m9-psychic-mechanic` 分支；GoogleTest 共 **79** 个用例全绿；`./build/werewolf` 可选 9 / 12守卫 / 12通灵机械狼 三个板主持整局。
+- **尚未实现（已在规则中定义，待后续）**：拍刀阶段 C 自动最优搜索（§4.4）；「按玩家定向隐藏信息」目前控制台为单屏 moderator 模式（§11 完整实现待 per-player 通道）。
 - **后续待定义（用户提供）**：更多板子（12 人预女猎白、丘比特/骑士等）、屠城板、遗言细则、平票变体。
 
 ### 产品形态路线图（远期，先记录后做）

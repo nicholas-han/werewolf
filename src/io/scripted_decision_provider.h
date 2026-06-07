@@ -27,6 +27,7 @@ public:
     std::deque<std::optional<int>> selfDestructs;
     std::deque<std::optional<int>> guards;
     std::deque<std::optional<int>> mechanicLearns;
+    std::deque<std::optional<int>> mechanicBigKnives;
 
     // Sheriff election (BRD §7).
     std::deque<bool> runForSheriff;
@@ -66,6 +67,11 @@ public:
     std::optional<int> chooseMechanicLearn(const GameState&, int,
                                            const std::vector<int>&) override {
         return popOpt(mechanicLearns);
+    }
+
+    std::optional<int> chooseMechanicBigKnife(const GameState&, int,
+                                              const std::vector<int>&) override {
+        return popOpt(mechanicBigKnives);
     }
 
     bool chooseWitchSave(const GameState&, int, int) override {

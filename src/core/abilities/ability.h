@@ -35,10 +35,16 @@ struct PendingDeath {
 // choices (e.g. the witch must know who the wolves knifed, BRD §2/§5.1).
 struct NightContext {
     bool wolvesActed = false;
-    std::optional<int> guardTarget;   // player protected by the guardian (空守 = unset)
-    std::optional<int> wolfTarget;    // who the wolves chose to knife (空刀 = unset)
-    std::optional<int> savedTarget;   // player rescued by the witch's antidote
-    std::optional<int> poisonTarget;  // player hit by the witch's poison
+    std::optional<int> guardTarget;          // real guardian's protect (空守 = unset)
+    std::optional<int> mechanicGuardTarget;  // mechanic's learned guard (poison-reflecting)
+    std::optional<int> wolfTarget;           // 普通刀: team kill / mechanic lone knife
+    std::optional<int> bigKnifeTarget;       // 机械狼大刀 (一次性, 破盾/ignores guard)
+    std::optional<int> savedTarget;          // real witch's antidote target
+    std::optional<int> poisonTarget;         // real witch's poison target
+    std::optional<int> poisonSourceId;       // who cast poisonTarget (for guard reflect)
+    std::optional<int> mechSavedTarget;      // mechanic-witch antidote target
+    std::optional<int> mechPoisonTarget;     // mechanic-witch poison target
+    std::optional<int> mechPoisonSourceId;   // mechanic id (for guard reflect)
 };
 
 // Mix-in for abilities that act during the night, in a defined order (§5.1).

@@ -73,6 +73,7 @@ void WitchPotions::actAtNight(NightContext& ctx, GameState& state, Player& owner
             provider.chooseWitchPoison(state, owner.id(), aliveIds(state, owner.id()));
         if (target) {
             ctx.poisonTarget = *target;
+            ctx.poisonSourceId = owner.id();
             state.witchPoisonAvailable = false;
         }
     }
@@ -117,6 +118,18 @@ void MechanicLearn::actAtNight(NightContext& /*ctx*/, GameState& state, Player& 
     const Player* t = state.find(*target);
     if (t == nullptr) return;
     state.mechanicLearned = t->role().kind();  // disguise takes effect immediately
+    state.mechanicLearnDay = state.day;        // active abilities start the next night
+
+    // Witch: copy the witch's *current* remaining potions (BRD §2 — she acts first,
+    // so anything already spent tonight is gone). Independent of the real witch.
+    if (state.mechanicLearned == RoleKind::Witch) {
+        state.mechanicAntidoteAvailable = state.witchAntidoteAvailable;
+        state.mechanicPoisonAvailable = state.witchPoisonAvailable;
+    }
+    // Any wolf role grants the one-shot 破盾大刀 (usable once it becomes lone, §2).
+    if (t->faction() == Faction::Wolf) {
+        state.mechanicBigKnifeAvailable = true;
+    }
 }
 
 void MechanicLoneKill::actAtNight(NightContext& ctx, GameState& state, Player& owner,
@@ -127,7 +140,83 @@ void MechanicLoneKill::actAtNight(NightContext& ctx, GameState& state, Player& o
     }
     if (ctx.wolvesActed) return;  // safety: don't double-set if a team kill happened
     ctx.wolvesActed = true;
-    ctx.wolfTarget = provider.chooseNightKill(state, aliveIds(state));
+    ctx.wolfTarget = provider.chooseNightKill(state, aliveIds(state));  // 普通刀 (守卫可挡)
+
+    // One-shot 破盾大刀 (from learning a wolf): usable only once lone and only from
+    // the night after learning (§2). Adds a second kill that ignores the guard.
+    if (state.mechanicBigKnifeAvailable && state.mechanicAbilitiesActive()) {
+        if (std::optional<int> big =
+                provider.chooseMechanicBigKnife(state, owner.id(), aliveIds(state))) {
+            ctx.bigKnifeTarget = *big;
+            state.mechanicBigKnifeAvailable = false;
+        }
+    }
+}
+
+void MechanicLearnedInspect::actAtNight(NightContext& /*ctx*/, GameState& state, Player& owner,
+                                        DecisionProvider& provider) {
+    if (state.mechanicLearned != RoleKind::Psychic || !state.mechanicAbilitiesActive()) return;
+    std::optional<int> target = provider.chooseInspect(state, owner.id(), aliveIds(state));
+    if (!target) return;
+    const Player* t = state.find(*target);
+    if (t == nullptr) return;
+    RoleKind shown = t->role().kind();
+    if (shown == RoleKind::MechanicWolf) {
+        shown = state.mechanicLearned.value_or(RoleKind::MechanicWolf);
+    }
+    provider.onPsychicResult(owner.id(), *target, shown);
+}
+
+void MechanicLearnedWitch::actAtNight(NightContext& ctx, GameState& state, Player& owner,
+                                      DecisionProvider& provider) {
+    if (state.mechanicLearned != RoleKind::Witch || !state.mechanicAbilitiesActive()) return;
+    bool saved = false;
+    if (state.mechanicAntidoteAvailable && ctx.wolfTarget.has_value()) {
+        if (provider.chooseWitchSave(state, owner.id(), *ctx.wolfTarget)) {
+            ctx.mechSavedTarget = *ctx.wolfTarget;
+            state.mechanicAntidoteAvailable = false;
+            saved = true;
+        }
+    }
+    const bool poisonBlocked = saved && !bothPotionsSameNight_;
+    if (state.mechanicPoisonAvailable && !poisonBlocked) {
+        if (std::optional<int> target =
+                provider.chooseWitchPoison(state, owner.id(), aliveIds(state, owner.id()))) {
+            ctx.mechPoisonTarget = *target;
+            ctx.mechPoisonSourceId = owner.id();
+            state.mechanicPoisonAvailable = false;
+        }
+    }
+}
+
+void MechanicLearnedProtect::actAtNight(NightContext& ctx, GameState& state, Player& owner,
+                                        DecisionProvider& provider) {
+    if (state.mechanicLearned != RoleKind::Guardian || !state.mechanicAbilitiesActive()) return;
+    std::vector<int> candidates;
+    for (const Player& p : state.players) {
+        if (!p.isAlive()) continue;
+        if (!allowConsecutive_ && state.mechanicLastGuardedId &&
+            *state.mechanicLastGuardedId == p.id()) {
+            continue;
+        }
+        candidates.push_back(p.id());
+    }
+    std::optional<int> target = provider.chooseGuard(state, owner.id(), candidates);
+    ctx.mechanicGuardTarget = target;
+    state.mechanicLastGuardedId = target;
+}
+
+void MechanicLearnedShoot::onDeath(GameState& state, Player& owner, DecisionProvider& provider,
+                                   std::vector<PendingDeath>& out) {
+    if (state.mechanicLearned != RoleKind::Hunter || !state.mechanicAbilitiesActive()) return;
+    // Hunter rule (poison blocks); also a self-destruct never shoots.
+    if (owner.hasDeathCause(DeathCause::Poisoned) || owner.hasDeathCause(DeathCause::BlownUp)) {
+        return;
+    }
+    if (std::optional<int> target =
+            provider.chooseHunterShot(state, owner.id(), aliveIds(state, owner.id()))) {
+        out.push_back({*target, DeathCause::Shot});
+    }
 }
 
 void HunterGunCheck::actAtNight(NightContext& ctx, GameState& /*state*/, Player& owner,

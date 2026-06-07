@@ -172,3 +172,127 @@ TEST(HunterGunCheck, ReflectsTonightsPoison) {
     gc.actAtNight(poisoned, s, *s.find(6), dp);
     EXPECT_FALSE(dp.hunterGunChecks.back().second);
 }
+
+// ---------- M9 Phase 2: learned active abilities (BRD §2) ----------
+
+TEST(MechanicLearned, HunterShotGatedThenPoisonBlocked) {
+    GameState s = psychicBoard();
+    MechanicLearnedShoot shoot;
+    ScriptedDecisionProvider dp;
+    s.mechanicLearned = RoleKind::Hunter;
+    s.mechanicLearnDay = 1;
+    Player& mech = *s.find(4);
+
+    s.day = 1;  // learn night -> not active yet
+    dp.hunterShots = {1};
+    {
+        std::vector<PendingDeath> out;
+        shoot.onDeath(s, mech, dp, out);
+        EXPECT_TRUE(out.empty());
+    }
+
+    s.day = 2;  // next night -> active, not poisoned -> shoots
+    {
+        std::vector<PendingDeath> out;
+        shoot.onDeath(s, mech, dp, out);
+        ASSERT_EQ(out.size(), 1u);
+        EXPECT_EQ(out[0].playerId, 1);
+        EXPECT_EQ(out[0].cause, DeathCause::Shot);
+    }
+
+    mech.recordDeath(DeathCause::Poisoned, 2);  // poisoned -> blocked
+    dp.hunterShots = {1};
+    {
+        std::vector<PendingDeath> out;
+        shoot.onDeath(s, mech, dp, out);
+        EXPECT_TRUE(out.empty());
+    }
+}
+
+TEST(MechanicLearned, PsychicInspectGatedToNextNight) {
+    GameState s = psychicBoard();
+    MechanicLearnedInspect insp;
+    NightContext ctx;
+    ScriptedDecisionProvider dp;
+    s.mechanicLearned = RoleKind::Psychic;
+    s.mechanicLearnDay = 1;
+    dp.inspects = {6};  // witch
+
+    s.day = 1;  // learn night -> inactive, no result and no consumption
+    insp.actAtNight(ctx, s, *s.find(4), dp);
+    EXPECT_TRUE(dp.psychicResults.empty());
+
+    s.day = 2;  // next night -> active
+    insp.actAtNight(ctx, s, *s.find(4), dp);
+    ASSERT_EQ(dp.psychicResults.size(), 1u);
+    EXPECT_EQ(std::get<2>(dp.psychicResults.back()), RoleKind::Witch);
+}
+
+TEST(MechanicLearned, WitchPotionsCopiedAtLearnAndIndependent) {
+    GameState s = psychicBoard();
+    s.witchAntidoteAvailable = false;  // the real witch already used her antidote
+    s.witchPoisonAvailable = true;
+
+    MechanicLearn learn;
+    NightContext lctx;
+    ScriptedDecisionProvider dp;
+    dp.mechanicLearns = {6};  // learn the witch
+    s.day = 1;
+    learn.actAtNight(lctx, s, *s.find(4), dp);
+    ASSERT_EQ(s.mechanicLearned, std::optional<RoleKind>(RoleKind::Witch));
+    EXPECT_FALSE(s.mechanicAntidoteAvailable);  // copied current stock: no antidote
+    EXPECT_TRUE(s.mechanicPoisonAvailable);     // copied current stock: poison
+
+    MechanicLearnedWitch mw(/*bothPotionsSameNight=*/false);
+    NightContext nctx;
+    dp.witchPoisons = {1};
+    s.day = 2;  // next night -> active
+    mw.actAtNight(nctx, s, *s.find(4), dp);
+    EXPECT_EQ(nctx.mechPoisonTarget, std::optional<int>(1));
+    EXPECT_EQ(nctx.mechPoisonSourceId, std::optional<int>(4));
+    EXPECT_FALSE(s.mechanicPoisonAvailable);
+}
+
+TEST(Game, MechanicBigKnifePiercesGuard) {
+    // KillAll, sheriff off: werewolf, mechanic, guardian, civilian.
+    Board board;
+    board.name = "bigknife";
+    board.roster = {{RoleKind::Werewolf, 1}, {RoleKind::MechanicWolf, 1},
+                    {RoleKind::Guardian, 1}, {RoleKind::Civilian, 1}};
+    board.config.winRule = WinRule::KillAll;
+    board.config.sheriffEnabled = false;
+
+    ScriptedDecisionProvider dp;
+    dp.mechanicLearns = {1};                // n1 learn the werewolf -> gains 大刀
+    dp.nightKills = {std::nullopt, 3};       // n1 空刀 ; n2 mechanic 普通刀 -> guard 3
+    dp.mechanicBigKnives = {4};             // n2 大刀 -> the guarded civ 4
+    dp.guards = {2, 4};                      // n1 guard seat 2 ; n2 guardian guards civ 4
+    dp.votes = {1, 1, 1, 1};                 // day1 exile the werewolf -> mechanic is lone
+
+    Game game(board, dp);
+    EXPECT_EQ(game.run(), GameResult::WolfWins);
+    // civ4 was guarded yet the 破盾大刀 still killed it.
+    EXPECT_TRUE(game.state().find(4)->hasDeathCause(DeathCause::Killed));
+}
+
+TEST(Game, MechanicGuardReflectsPoison) {
+    // KillAll, sheriff off: werewolf, mechanic, witch, guardian, civilian.
+    Board board;
+    board.name = "reflect";
+    board.roster = {{RoleKind::Werewolf, 1}, {RoleKind::MechanicWolf, 1}, {RoleKind::Witch, 1},
+                    {RoleKind::Guardian, 1}, {RoleKind::Civilian, 1}};
+    board.config.winRule = WinRule::KillAll;
+    board.config.sheriffEnabled = false;
+
+    ScriptedDecisionProvider dp;
+    dp.mechanicLearns = {4};  // n1 learn the guardian (gains reflecting protect)
+    // guards consumed: n1 real-guard ; n2 real-guard, mechanic-guard ; n3 same.
+    dp.guards = {std::nullopt, std::nullopt, 5, std::nullopt, std::nullopt};
+    dp.witchPoisons = {std::nullopt, 5};        // n2: witch poisons the protected civ5
+    dp.nightKills = {std::nullopt, std::nullopt, 4};  // n3 knife guardian -> wolf win
+
+    Game game(board, dp);
+    EXPECT_EQ(game.run(), GameResult::WolfWins);
+    EXPECT_TRUE(game.state().find(3)->hasDeathCause(DeathCause::Poisoned));  // witch reflected dead
+    EXPECT_TRUE(game.state().find(5)->isAlive());                            // protected civ survived
+}
