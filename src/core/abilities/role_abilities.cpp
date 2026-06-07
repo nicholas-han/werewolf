@@ -93,6 +93,50 @@ void Protect::actAtNight(NightContext& ctx, GameState& state, Player& owner,
     state.lastGuardedId = target;  // 空守 -> nullopt -> next night unrestricted
 }
 
+void PsychicInspect::actAtNight(NightContext& /*ctx*/, GameState& state, Player& owner,
+                                DecisionProvider& provider) {
+    std::optional<int> target = provider.chooseInspect(state, owner.id(), aliveIds(state));
+    if (!target) return;
+    const Player* t = state.find(*target);
+    if (t == nullptr) return;
+    // Disguise: inspecting the MechanicWolf returns its learned role (or, if it has
+    // not learned yet, MechanicWolf itself). Everyone else shows their true role.
+    RoleKind shown = t->role().kind();
+    if (shown == RoleKind::MechanicWolf) {
+        shown = state.mechanicLearned.value_or(RoleKind::MechanicWolf);
+    }
+    provider.onPsychicResult(owner.id(), *target, shown);
+}
+
+void MechanicLearn::actAtNight(NightContext& /*ctx*/, GameState& state, Player& owner,
+                               DecisionProvider& provider) {
+    if (state.mechanicLearned.has_value()) return;  // global once
+    std::optional<int> target =
+        provider.chooseMechanicLearn(state, owner.id(), aliveIds(state, owner.id()));
+    if (!target) return;
+    const Player* t = state.find(*target);
+    if (t == nullptr) return;
+    state.mechanicLearned = t->role().kind();  // disguise takes effect immediately
+}
+
+void MechanicLoneKill::actAtNight(NightContext& ctx, GameState& state, Player& owner,
+                                  DecisionProvider& provider) {
+    // Only knifes once every *other* wolf is out (the team's NightKill is gone).
+    for (const Player& p : state.players) {
+        if (p.isAlive() && p.faction() == Faction::Wolf && p.id() != owner.id()) return;
+    }
+    if (ctx.wolvesActed) return;  // safety: don't double-set if a team kill happened
+    ctx.wolvesActed = true;
+    ctx.wolfTarget = provider.chooseNightKill(state, aliveIds(state));
+}
+
+void HunterGunCheck::actAtNight(NightContext& ctx, GameState& /*state*/, Player& owner,
+                                DecisionProvider& provider) {
+    // Currently shootable unless the witch is poisoning this hunter tonight (§2).
+    const bool canShoot = !(ctx.poisonTarget && *ctx.poisonTarget == owner.id());
+    provider.onHunterGunCheck(owner.id(), canShoot);
+}
+
 void DeathTriggerShoot::onDeath(GameState& state, Player& owner, DecisionProvider& provider,
                                 std::vector<PendingDeath>& out) {
     // A blocked death cause forbids the shot (BRD §2: hunter blocked by poison;

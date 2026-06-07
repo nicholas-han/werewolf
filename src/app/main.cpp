@@ -82,11 +82,13 @@ int main() {
     using namespace ww;
 
     std::cout << "=== 狼人杀（法官控制台）===\n";
-    std::cout << "选择板子：1) 9 人预女猎  2) 12 人预女猎守 + 狼枪\n> ";
+    std::cout << "选择板子：1) 9 人预女猎  2) 12 人预女猎守 + 狼枪  3) 12 人通灵机械狼\n> ";
     std::string choice;
     std::getline(std::cin, choice);
-    Board board = (!choice.empty() && choice[0] == '2') ? makeBoard12_GuardWolfGun()
-                                                        : makeBoard9_SeerWitchHunter();
+    const char b = choice.empty() ? '1' : choice[0];
+    Board board = (b == '3') ? makeBoard12_PsychicMechanic()
+                  : (b == '2') ? makeBoard12_GuardWolfGun()
+                               : makeBoard9_SeerWitchHunter();
     std::cout << "板子：" << board.name << "（" << board.totalPlayers() << " 人）\n";
 
     std::optional<std::vector<RoleKind>> seatRoles = promptSetup(board, std::cin, std::cout);

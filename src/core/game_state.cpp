@@ -19,6 +19,7 @@ GameState::Snapshot GameState::snapshot() const {
     s.witchAntidoteAvailable = witchAntidoteAvailable;
     s.witchPoisonAvailable = witchPoisonAvailable;
     s.lastGuardedId = lastGuardedId;
+    s.mechanicLearned = mechanicLearned;
     s.logSize = log.size();
     return s;
 }
@@ -34,6 +35,7 @@ void GameState::restore(const Snapshot& snap) {
     witchAntidoteAvailable = snap.witchAntidoteAvailable;
     witchPoisonAvailable = snap.witchPoisonAvailable;
     lastGuardedId = snap.lastGuardedId;
+    mechanicLearned = snap.mechanicLearned;
     if (log.size() > snap.logSize) log.resize(snap.logSize);
 }
 
@@ -87,6 +89,17 @@ int GameState::countAliveRole(RoleKind kind) const {
     int n = 0;
     for (const Player& p : players) {
         if (p.isAlive() && p.role().kind() == kind) ++n;
+    }
+    return n;
+}
+
+int GameState::countAliveOpenWolves() const {
+    int n = 0;
+    for (const Player& p : players) {
+        if (p.isAlive() && p.faction() == Faction::Wolf &&
+            p.role().kind() != RoleKind::MechanicWolf) {
+            ++n;
+        }
     }
     return n;
 }

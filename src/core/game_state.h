@@ -31,6 +31,10 @@ public:
     // Empty = nobody protected last night (or no guardian).
     std::optional<int> lastGuardedId;
 
+    // MechanicWolf's learned role (BRD §2, psychic board). Empty = not yet learned
+    // (the psychic then sees it as MechanicWolf). Set once per game.
+    std::optional<RoleKind> mechanicLearned;
+
     // Event / history log.
     std::vector<std::string> log;
 
@@ -45,6 +49,7 @@ public:
         bool witchAntidoteAvailable;
         bool witchPoisonAvailable;
         std::optional<int> lastGuardedId;
+        std::optional<RoleKind> mechanicLearned;
         std::size_t logSize;
     };
     Snapshot snapshot() const;
@@ -61,6 +66,9 @@ public:
     int countAlive(Faction faction) const;
     int countAlive(SubKind subKind) const;
     int countAliveRole(RoleKind kind) const;
+    // Living "eye-opening" wolves — excludes MechanicWolf (不睁眼狼); used for the
+    // vote-binding parity (§4.3) and 拍刀 N (§4.4).
+    int countAliveOpenWolves() const;
 };
 
 // Builds the initial state from a board: one Player per roster slot, seats

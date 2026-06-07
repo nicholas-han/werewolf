@@ -24,6 +24,8 @@ public:
     std::optional<int> chooseVote(const GameState&, int, const std::vector<int>&) override;
     std::optional<int> chooseInspect(const GameState&, int, const std::vector<int>&) override;
     std::optional<int> chooseGuard(const GameState&, int, const std::vector<int>&) override;
+    std::optional<int> chooseMechanicLearn(const GameState&, int,
+                                           const std::vector<int>&) override;
     bool chooseWitchSave(const GameState&, int, int) override;
     std::optional<int> chooseWitchPoison(const GameState&, int, const std::vector<int>&) override;
     std::optional<int> chooseHunterShot(const GameState&, int, const std::vector<int>&) override;
@@ -35,6 +37,8 @@ public:
     std::optional<int> chooseBadgeTransfer(const GameState&, int, const std::vector<int>&) override;
     SpeechDirection chooseSpeechDirection(const GameState&, int, int, bool) override;
     void onInspectResult(int seerId, int targetId, bool isWolf) override;
+    void onPsychicResult(int psychicId, int targetId, RoleKind shownRole) override;
+    void onHunterGunCheck(int hunterId, bool canShoot) override;
     void notify(const std::string& message) override;
     void pause(const std::string& note) override;
 

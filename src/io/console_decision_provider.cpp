@@ -124,15 +124,27 @@ std::optional<int> ConsoleDecisionProvider::chooseVote(const GameState& state, i
     return promptOptional("【白天】" + nameOf(state, voterId) + " 请投票放逐", state, candidates);
 }
 
-std::optional<int> ConsoleDecisionProvider::chooseInspect(const GameState& state, int seerId,
+std::optional<int> ConsoleDecisionProvider::chooseInspect(const GameState& state, int inspectorId,
                                                           const std::vector<int>& candidates) {
-    return promptOptional("【夜晚】预言家 " + nameOf(state, seerId) + " 请查验", state, candidates);
+    // Serves both seer and psychic; name the inspector's role.
+    const Player* p = state.find(inspectorId);
+    const std::string role = p ? txt::role(p->role().kind()) : "查验者";
+    return promptOptional("【夜晚】" + role + " " + nameOf(state, inspectorId) + " 请查验", state,
+                          candidates);
 }
 
 std::optional<int> ConsoleDecisionProvider::chooseGuard(const GameState& state, int guardId,
                                                         const std::vector<int>& candidates) {
     return promptOptional("【夜晚】守卫 " + nameOf(state, guardId) + " 请守护（可空守）", state,
                           candidates);
+}
+
+std::optional<int> ConsoleDecisionProvider::chooseMechanicLearn(const GameState& state,
+                                                                int mechanicId,
+                                                                const std::vector<int>& candidates) {
+    return promptOptional("【夜晚】机械狼 " + nameOf(state, mechanicId) +
+                              " 是否学习一名玩家的身份（全局一次，可不学）",
+                          state, candidates);
 }
 
 bool ConsoleDecisionProvider::chooseWitchSave(const GameState& state, int witchId, int knifedId) {
@@ -210,6 +222,16 @@ SpeechDirection ConsoleDecisionProvider::chooseSpeechDirection(const GameState& 
 void ConsoleDecisionProvider::onInspectResult(int seerId, int targetId, bool isWolf) {
     out_ << "【私密→预言家 #" << seerId << "】#" << targetId << " 是 "
          << (isWolf ? "狼人（查杀）" : "好人（金水）") << "\n";
+}
+
+void ConsoleDecisionProvider::onPsychicResult(int psychicId, int targetId, RoleKind shownRole) {
+    out_ << "【私密→通灵师 #" << psychicId << "】#" << targetId << " 的身份是 "
+         << txt::role(shownRole) << "\n";
+}
+
+void ConsoleDecisionProvider::onHunterGunCheck(int hunterId, bool canShoot) {
+    out_ << "【私密→猎人 #" << hunterId << "】当前"
+         << (canShoot ? "可开枪" : "不可开枪（带毒）") << "\n";
 }
 
 void ConsoleDecisionProvider::notify(const std::string& message) {

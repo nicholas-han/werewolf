@@ -22,8 +22,11 @@ enum class DeathCause { Killed, Poisoned, Exiled, Shot, BlownUp };
 enum class Phase { Night, Day };
 
 // Concrete roles (BRD §3). 9-player: Werewolf/Seer/Witch/Hunter/Civilian.
-// 12-player adds Guardian (守卫) and WolfGun (狼枪).
-enum class RoleKind { Werewolf, Seer, Witch, Hunter, Civilian, Guardian, WolfGun };
+// 12-player guard board adds Guardian (守卫) and WolfGun (狼枪).
+// 12-player psychic board adds Psychic (通灵师) and MechanicWolf (机械狼).
+enum class RoleKind {
+    Werewolf, Seer, Witch, Hunter, Civilian, Guardian, WolfGun, Psychic, MechanicWolf
+};
 
 // --- Board config option enums (BRD §3) ---
 
@@ -83,6 +86,8 @@ constexpr std::string_view to_string(RoleKind r) {
         case RoleKind::Civilian: return "Civilian";
         case RoleKind::Guardian: return "Guardian";
         case RoleKind::WolfGun: return "WolfGun";
+        case RoleKind::Psychic: return "Psychic";
+        case RoleKind::MechanicWolf: return "MechanicWolf";
     }
     return "?";
 }

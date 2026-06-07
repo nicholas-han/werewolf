@@ -12,8 +12,8 @@ GameResult evaluateWin(const GameState& state, const BoardConfig& config) {
     }
 
     // Wolf vote-binding victory (§4.3): "可睁眼狼人" >= 存活好人 -> locked wolf win.
-    // M1: every wolf opens eyes, so countAlive(Wolf) is the eye-opening count.
-    if (wolves >= town) {
+    // MechanicWolf does not open eyes with the team, so it is excluded here.
+    if (state.countAliveOpenWolves() >= town) {
         return GameResult::WolfWins;
     }
 

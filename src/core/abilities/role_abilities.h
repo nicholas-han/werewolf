@@ -69,6 +69,50 @@ private:
     bool allowConsecutive_;
 };
 
+// Psychic's nightly check (§2, psychic board): reveals the target's exact role
+// (via onPsychicResult). For the MechanicWolf it returns its disguise.
+class PsychicInspect : public Ability, public NightActor {
+public:
+    std::string name() const override { return "PsychicInspect"; }
+    int nightOrder() const override { return 50; }  // acts last on the psychic board
+    std::string nightCue() const override { return "通灵师"; }
+    void actAtNight(NightContext& ctx, GameState& state, Player& owner,
+                    DecisionProvider& provider) override;
+};
+
+// MechanicWolf — learn one living player's role, once per game (§2). Phase 1
+// records the disguise only; the learned active abilities arrive in a later phase.
+class MechanicLearn : public Ability, public NightActor {
+public:
+    std::string name() const override { return "MechanicLearn"; }
+    int nightOrder() const override { return 38; }
+    std::string nightCue() const override { return "机械狼"; }
+    void actAtNight(NightContext& ctx, GameState& state, Player& owner,
+                    DecisionProvider& provider) override;
+};
+
+// MechanicWolf — innate solo knife once every other wolf is out (§2).
+class MechanicLoneKill : public Ability, public NightActor {
+public:
+    std::string name() const override { return "MechanicLoneKill"; }
+    int nightOrder() const override { return 40; }
+    std::string nightCue() const override { return "机械狼"; }
+    void actAtNight(NightContext& ctx, GameState& state, Player& owner,
+                    DecisionProvider& provider) override;
+};
+
+// Hunter's nightly "can I shoot?" gesture (§2/§5.1, all boards): a private cue to
+// the hunter on whether a shot is currently available (i.e. not being poisoned
+// this night). Informational only — the actual block lives in DeathTriggerShoot.
+class HunterGunCheck : public Ability, public NightActor {
+public:
+    std::string name() const override { return "HunterGunCheck"; }
+    int nightOrder() const override { return 35; }  // after the witch's poison
+    std::string nightCue() const override { return "猎人"; }
+    void actAtNight(NightContext& ctx, GameState& state, Player& owner,
+                    DecisionProvider& provider) override;
+};
+
 // Death-triggered shot, reused by Hunter and WolfGun (§2). `blocked` lists the
 // death causes that forbid the shot (hunter: {Poisoned}; wolfgun: {Poisoned,
 // BlownUp}). The shot itself always resolves in daytime via the settlement.
