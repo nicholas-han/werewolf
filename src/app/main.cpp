@@ -1,5 +1,6 @@
 #include <iostream>
 #include <map>
+#include <memory>
 #include <optional>
 #include <random>
 #include <string>
@@ -11,6 +12,8 @@
 #include "flow/game.h"
 #include "flow/win_condition.h"
 #include "io/console_decision_provider.h"
+#include "io/decision_provider.h"
+#include "io/pass_and_play_decision_provider.h"
 
 // Command-line entry point (BRD §12 app/, M4 + M5): play one game of the
 // 9-player Seer/Witch/Hunter board on the terminal, moderator-operated.
@@ -93,15 +96,52 @@ int main() {
 
     std::optional<std::vector<RoleKind>> seatRoles = promptSetup(board, std::cin, std::cout);
 
-    ConsoleDecisionProvider provider(std::cin, std::cout);
-    Game game(board, provider, seatRoles);
+    std::cout << "玩法：1) 单屏法官（一人主持）  2) 传递游玩（一台设备多人，私密交接）\n> ";
+    std::string modeLine;
+    std::getline(std::cin, modeLine);
+    const bool passAndPlay = (!modeLine.empty() && modeLine[0] == '2');
 
-    std::cout << "【法官视角】座位 -> 身份（你作为法官可见全部信息，BRD §11）:\n";
-    for (const Player& p : game.state().players) {
-        std::cout << "  座位 " << p.seat() << " (" << p.name() << "): " << txt::role(p.role().kind())
-                  << "\n";
+    std::unique_ptr<DecisionProvider> provider;
+    PassAndPlayDecisionProvider* pnp = nullptr;
+    if (passAndPlay) {
+        auto p = std::make_unique<PassAndPlayDecisionProvider>(std::cin, std::cout);
+        pnp = p.get();
+        provider = std::move(p);
+    } else {
+        provider = std::make_unique<ConsoleDecisionProvider>(std::cin, std::cout);
     }
-    std::cout << "--------------------------------------------\n";
+
+    Game game(board, *provider, seatRoles);
+
+    if (passAndPlay) {
+        // Each player privately learns their own role (wolves see their team; the
+        // mechanic does not meet the pack). No public moderator view.
+        std::vector<int> openWolves;
+        for (const Player& p : game.state().players) {
+            if (p.faction() == Faction::Wolf && p.role().kind() != RoleKind::MechanicWolf) {
+                openWolves.push_back(p.seat());
+            }
+        }
+        for (const Player& p : game.state().players) {
+            std::string msg = "你的身份是：" + txt::role(p.role().kind());
+            if (p.role().kind() == RoleKind::MechanicWolf) {
+                msg += "\n（你是机械狼，不与狼队见面；其他狼出局后可独立行动）";
+            } else if (p.faction() == Faction::Wolf) {
+                msg += "\n你的狼队友：";
+                for (int seat : openWolves) {
+                    if (seat != p.seat()) msg += "P" + std::to_string(seat) + " ";
+                }
+            }
+            pnp->privateAnnounce(p.id(), msg);
+        }
+    } else {
+        std::cout << "【法官视角】座位 -> 身份（你作为法官可见全部信息，BRD §11）:\n";
+        for (const Player& p : game.state().players) {
+            std::cout << "  座位 " << p.seat() << " (" << p.name()
+                      << "): " << txt::role(p.role().kind()) << "\n";
+        }
+        std::cout << "--------------------------------------------\n";
+    }
 
     GameResult result = game.run();
 

@@ -366,9 +366,9 @@ werewolf/
 │   │   └── abilities/ # ability.h（基类+钩子）, role_abilities.*（NightKill/Inspect/WitchPotions/Protect/DeathTriggerShoot）
 │   ├── flow/          # game.*（编排：夜/昼/竞选）, settlement.*（死亡结算核心）,
 │   │                  #   win_condition.*, last_words.h, speech_order.h, paidao.*（拍刀沙盒）
-│   ├── io/            # decision_provider.h, scripted_/console_decision_provider.*
+│   ├── io/            # decision_provider.h, scripted_/console_/pass_and_play_decision_provider.*
 │   └── app/           # main.cpp（命令行入口：发牌方式 + 主持整局）
-└── tests/             # core/flow/roles/sheriff/console/judge/sandbox/board12/psychic_mechanic_test.cpp（GoogleTest，79 用例）
+└── tests/             # core/flow/roles/sheriff/console/judge/sandbox/board12/psychic_mechanic/pass_and_play_test.cpp（GoogleTest，83 用例）
 ```
 
 ## 13. 技术栈与约定
@@ -404,8 +404,9 @@ werewolf/
   10. ✅ **M9** 第三个板子：**12 人通灵机械狼**（§2/§3）——能力体系的极限检验。
       - 通灵师（查具体身份）；机械狼：运行时学习身份（条件能力组件，非动态改 Role）、伪装（信息钩子、当晚即生效）、独立刀、破盾大刀（一次性、双刀）、独立药水副本、反弹守卫、学猎/学通、下一晚生效（`mechanicAbilitiesActive()`）、不睁眼狼（`countAliveOpenWolves()`）。
       - 配套：猎人每晚开枪手势通知（§5.1）；自爆狼当夜参与讨论的澄清（§2，无机制影响）。
-- **当前状态**：M0–M8 已合入 `main`；M9 在 `m9-psychic-mechanic` 分支；GoogleTest 共 **79** 个用例全绿；`./build/werewolf` 可选 9 / 12守卫 / 12通灵机械狼 三个板主持整局。
-- **尚未实现（已在规则中定义，待后续）**：拍刀阶段 C 自动最优搜索（§4.4）；「按玩家定向隐藏信息」目前控制台为单屏 moderator 模式（§11 完整实现待 per-player 通道）。
+  11. ✅ **M10** 传递游玩（单设备多人）：`PassAndPlayDecisionProvider` 用「清屏 + 私密交接」在一台设备上实现每人只看自己信息（§11），程序自动当裁判；开局私密发牌（狼队互见、机械狼不见队友）。无需网络。
+- **当前状态**：M0–M9 已合入 `main`；M10 在 `m10-pass-and-play` 分支；GoogleTest 共 **83** 个用例全绿；`./build/werewolf` 可选 3 个板 + 单屏法官/传递游玩两种玩法。
+- **尚未实现（已在规则中定义，待后续）**：拍刀阶段 C 自动最优搜索（§4.4）；**真·联机**（多设备/网络，per-player 通道）——单设备传递游玩已落地 §11 私密性。
 - **后续待定义（用户提供）**：更多板子（12 人预女猎白、丘比特/骑士等）、屠城板、遗言细则、平票变体。
 
 ### 产品形态路线图（远期，先记录后做）
@@ -414,8 +415,9 @@ werewolf/
 
 1. ✅ **法官模式**：开局录入身份、状态面板、遗言/发言顺序 cue、主持叙述与节奏停顿。让法官拿着一台机器即可主持整局。
 2. ✅ **随机发牌**：程序随机分配身份（替代手动录入），法官只看分配结果。
-3. **多人联机**：法官 + 各玩家各自通过程序（多端/网络）参与，**每个玩家只看到自己被允许的信息**（真正落地 §11 的「按玩家定向下发」，不再是单屏 moderator 模式）。
-   - **归入此里程碑的「防泄露」需求**：①「流程节点」与「信息暴露」彻底解耦——例如**机械狼每晚走固定流程**（统一提示：技能状态 → 是否发动 → 带刀状态 → 击杀），不论学了谁、是否带刀，外人都看不出差别；② per-player 私密下发（如机械狼的技能状态、学猎人的开枪手势、学女巫且有解药时今夜被刀号码）。当前单屏 moderator 模式下法官全知，无真实泄露，故这些留待本里程碑随 per-player 通道一起做（引擎规则已正确，仅 I/O 呈现层改造）。
+3. **多人**：每个玩家只看到自己被允许的信息（§11 按玩家定向）。
+   - ✅ **单设备「传递游玩」(M10)**：`PassAndPlayDecisionProvider` 清屏+私密交接，一台设备上实现 §11 私密性；机械狼私密操作他人看不到（交接屏隔离），故"统一流程/防泄露"在此形态下天然解决。
+   - ⬜ **真·联机（多设备/网络）**：服务器跑引擎（权威真相层）+ 各端瘦客户端；把 `notify` 改为按玩家路由（`NetworkDecisionProvider`）。届时机械狼的"固定流程 + 私密手势"按 per-player 通道实现。引擎纯逻辑不变。
 4. **发言记录**：支持玩家发言（文本/语音转写），程序为每位玩家**留存发言记录**，可复盘。
 5. **AI Agent 玩家**：可接入不同 AI agent 作为玩家加入对局，与真人/彼此博弈（复用 `DecisionProvider` 接口：`BotDecisionProvider` / `AgentDecisionProvider`）。
 
