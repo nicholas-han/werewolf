@@ -80,6 +80,11 @@ TEST(Sheriff, NonCandidatesElectTheWinner) {
     EXPECT_EQ(game.run(), GameResult::WolfWins);
     ASSERT_TRUE(game.state().sheriffId.has_value());
     EXPECT_EQ(*game.state().sheriffId, 2);
+
+    // The voting phase is narrated: header, candidate list, and a tally (§7.2).
+    EXPECT_TRUE(hasEvent(dp, txt::sheriffVoteHeader()));
+    EXPECT_TRUE(hasEvent(dp, txt::sheriffCandidates("P2, P3")));
+    EXPECT_TRUE(hasEvent(dp, txt::sheriffVotes("P2=2, P3=1")));
 }
 
 // ---------- 归票 vote weight (BRD §7.1) ----------

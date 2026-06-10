@@ -77,6 +77,18 @@ inline std::string runoffStillTie() { return "  决胜轮仍平票 → 本轮无
 // --- Sheriff election (§7) ---
 inline std::string electionBegin() { return "【警长竞选】开始"; }
 inline std::string electionDeferred() { return "【警长竞选】顺延，仅投票（无发言）"; }
+inline std::string sheriffCandidates(const std::string& names) { return "上警候选人：" + names; }
+inline std::string sheriffVoteHeader() { return "【警长投票】（仅未上警玩家投票）"; }
+inline std::string sheriffVotes(const std::string& body) { return "  警长票数：" + body; }
+inline std::string sheriffRunoffTie(const std::string& names) {
+    return "  警长竞选平票（" + names + "）→ 进入决胜轮";
+}
+inline std::string sheriffRunoffVotes(const std::string& body) {
+    return "  警长决胜轮票数：" + body;
+}
+inline std::string autoSheriff(const std::string& name) {
+    return "仅 " + name + " 一人竞选，自动当选";
+}
 inline std::string becomesSheriff(const std::string& name) { return name + " 当选警长"; }
 inline std::string noSheriffNobodyRan() { return "无人上警，本局无警长"; }
 inline std::string badgeLostEveryoneRan() { return "全员上警，警徽流失，本局无警长"; }
