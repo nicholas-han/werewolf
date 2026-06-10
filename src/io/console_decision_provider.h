@@ -20,6 +20,12 @@ class ConsoleDecisionProvider : public DecisionProvider {
 public:
     ConsoleDecisionProvider(std::istream& in, std::ostream& out);
 
+    // Enable recording of speeches/last words for replay (BRD §4 发言记录). Off by
+    // default so a normal moderated game is not slowed by per-speech transcription.
+    void setRecordSpeech(bool on) { recordSpeech_ = on; }
+
+    std::string collectSpeech(const GameState&, int, SpeechKind, int) override;
+
     std::optional<int> chooseNightKill(const GameState&, const std::vector<int>&) override;
     std::optional<int> chooseVote(const GameState&, int, const std::vector<int>&) override;
     std::optional<int> chooseInspect(const GameState&, int, const std::vector<int>&) override;
@@ -47,6 +53,7 @@ public:
 private:
     std::istream& in_;
     std::ostream& out_;
+    bool recordSpeech_ = false;  // BRD §4: prompt for speech text only when enabled
 
     // Reads one trimmed line; std::nullopt on EOF.
     std::optional<std::string> readLine();

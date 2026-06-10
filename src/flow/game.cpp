@@ -97,12 +97,12 @@ std::string Game::moderatorStatus() const {
     return s;
 }
 
-void Game::cueSpeechOrder(int nightDeathCount, int singleDeadSeat) {
+std::vector<int> Game::cueSpeechOrder(int nightDeathCount, int singleDeadSeat) {
     std::vector<int> aliveSeats;
     for (const Player& p : state_.players) {
         if (p.isAlive()) aliveSeats.push_back(p.seat());
     }
-    if (aliveSeats.empty()) return;
+    if (aliveSeats.empty()) return {};
     std::sort(aliveSeats.begin(), aliveSeats.end());
 
     const int total = static_cast<int>(state_.players.size());
@@ -157,6 +157,17 @@ void Game::cueSpeechOrder(int nightDeathCount, int singleDeadSeat) {
         names += p ? p->name() : ("#" + std::to_string(seatId));
     }
     provider_.notify(txt::speakingOrder(names));
+    return order;
+}
+
+void Game::collectDaySpeeches(const std::vector<int>& orderSeats) {
+    for (int seat : orderSeats) {
+        const Player* p = state_.find(seat);
+        if (p == nullptr || !p->isAlive()) continue;
+        std::string text =
+            provider_.collectSpeech(state_, p->id(), SpeechKind::Statement, state_.day);
+        state_.recordSpeech(state_.day, SpeechKind::Statement, p->id(), seat, std::move(text));
+    }
 }
 
 GameResult Game::runNight() {
@@ -459,8 +470,9 @@ GameResult Game::runDay() {
     if (GameResult r = announceNightDeaths(); r != GameResult::Ongoing) return r;
 
     // 发言顺序 cue (③ §7.1.2): single death -> 死左/死右; multi / peaceful -> from sheriff.
-    cueSpeechOrder(nightDeathCount, singleDeadSeat);
+    const std::vector<int> speakOrder = cueSpeechOrder(nightDeathCount, singleDeadSeat);
     provider_.notify(txt::speechPhase());
+    collectDaySpeeches(speakOrder);  // §4 发言记录
 
     // Daytime self-destruct during 发言 (§2): day ends immediately, no vote.
     if (board_.config.blownUpEnabled) {

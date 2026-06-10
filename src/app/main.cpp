@@ -10,6 +10,7 @@
 #include "core/enums.h"
 #include "core/messages.h"
 #include "flow/game.h"
+#include "flow/transcript.h"
 #include "flow/win_condition.h"
 #include "io/console_decision_provider.h"
 #include "io/decision_provider.h"
@@ -101,15 +102,25 @@ int main() {
     std::getline(std::cin, modeLine);
     const bool passAndPlay = (!modeLine.empty() && modeLine[0] == '2');
 
+    std::cout << "记录发言（结束后可复盘）：1) 否（默认）  2) 是\n> ";
+    std::string recLine;
+    std::getline(std::cin, recLine);
+    const bool recordSpeech = (!recLine.empty() && recLine[0] == '2');
+
     std::unique_ptr<DecisionProvider> provider;
     PassAndPlayDecisionProvider* pnp = nullptr;
+    ConsoleDecisionProvider* console = nullptr;  // base view for shared toggles
     if (passAndPlay) {
         auto p = std::make_unique<PassAndPlayDecisionProvider>(std::cin, std::cout);
         pnp = p.get();
+        console = p.get();
         provider = std::move(p);
     } else {
-        provider = std::make_unique<ConsoleDecisionProvider>(std::cin, std::cout);
+        auto p = std::make_unique<ConsoleDecisionProvider>(std::cin, std::cout);
+        console = p.get();
+        provider = std::move(p);
     }
+    console->setRecordSpeech(recordSpeech);
 
     Game game(board, *provider, seatRoles);
 
@@ -147,5 +158,9 @@ int main() {
 
     std::cout << "============================================\n";
     std::cout << (result == GameResult::TownWins ? txt::resultTown() : txt::resultWolf()) << "\n";
+
+    if (recordSpeech) {  // §4 发言记录: print the replay transcript
+        std::cout << "\n" << formatTranscript(game.state());
+    }
     return 0;
 }

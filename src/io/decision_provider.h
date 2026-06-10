@@ -154,6 +154,16 @@ public:
         (void)hunterId; (void)canShoot;
     }
 
+    // Speech capture (BRD roadmap §4 发言记录): collect `speakerId`'s spoken words
+    // during the day's speaking phase (`kind`=Statement) or on death (`kind`=
+    // LastWords). Returns the text ("" = passed / silent / logging disabled).
+    // Voice input is just another source feeding this same string. Default no-op
+    // so non-recording providers stay fast.
+    virtual std::string collectSpeech(const GameState& state, int speakerId, SpeechKind kind,
+                                      int day) {
+        (void)state; (void)speakerId; (void)kind; (void)day; return "";
+    }
+
     // Pacing hook for a human moderator (BRD M5 ⑤): block until the operator is
     // ready to continue. No-op for scripted/bot providers.
     virtual void pause(const std::string& note) { (void)note; }

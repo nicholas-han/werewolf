@@ -114,6 +114,16 @@ bool ConsoleDecisionProvider::promptYesNo(const std::string& prompt) {
     }
 }
 
+std::string ConsoleDecisionProvider::collectSpeech(const GameState& state, int speakerId,
+                                                   SpeechKind kind, int day) {
+    (void)day;
+    if (!recordSpeech_) return "";  // logging disabled -> no prompt, stay fast
+    const std::string what = (kind == SpeechKind::LastWords) ? "遗言" : "发言";
+    out_ << "【记录" << what << "】" << nameOf(state, speakerId) << "（直接回车=跳过）\n> ";
+    std::optional<std::string> line = readLine();
+    return line.value_or("");
+}
+
 std::optional<int> ConsoleDecisionProvider::chooseNightKill(const GameState& state,
                                                             const std::vector<int>& candidates) {
     return promptOptional("【夜晚】狼人请选择刀杀目标", state, candidates);

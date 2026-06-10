@@ -28,6 +28,7 @@ public:
     std::deque<std::optional<int>> guards;
     std::deque<std::optional<int>> mechanicLearns;
     std::deque<std::optional<int>> mechanicBigKnives;
+    std::deque<std::string> speeches;  // BRD §4 发言记录: FIFO speech/last-words text
 
     // Sheriff election (BRD §7).
     std::deque<bool> runForSheriff;
@@ -118,6 +119,13 @@ public:
     std::optional<int> chooseBadgeTransfer(const GameState&, int,
                                            const std::vector<int>&) override {
         return popOpt(badgeTransfers);
+    }
+
+    std::string collectSpeech(const GameState&, int, SpeechKind, int) override {
+        if (speeches.empty()) return "";
+        std::string v = speeches.front();
+        speeches.pop_front();
+        return v;
     }
 
     void onInspectResult(int seerId, int targetId, bool isWolf) override {
