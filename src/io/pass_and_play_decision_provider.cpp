@@ -148,6 +148,12 @@ void PassAndPlayDecisionProvider::onHunterGunCheck(int hunterId, bool canShoot) 
     ConsoleDecisionProvider::onHunterGunCheck(hunterId, canShoot);
 }
 
+void PassAndPlayDecisionProvider::onMechanicLearnResult(int mechanicId, int targetId,
+                                                        RoleKind learnedRole) {
+    ensureTurn("玩家 P" + std::to_string(mechanicId), mechanicId);
+    ConsoleDecisionProvider::onMechanicLearnResult(mechanicId, targetId, learnedRole);
+}
+
 // --- public output ---
 
 void PassAndPlayDecisionProvider::notify(const std::string& message) {

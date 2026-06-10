@@ -154,6 +154,12 @@ public:
         (void)hunterId; (void)canShoot;
     }
 
+    // Directed result delivered privately to the MechanicWolf right after it learns
+    // a player's identity (BRD §2/§11): the exact role it just acquired.
+    virtual void onMechanicLearnResult(int mechanicId, int targetId, RoleKind learnedRole) {
+        (void)mechanicId; (void)targetId; (void)learnedRole;
+    }
+
     // Speech capture (BRD roadmap §4 发言记录): collect `speakerId`'s spoken words
     // during the day's speaking phase (`kind`=Statement) or on death (`kind`=
     // LastWords). Returns the text ("" = passed / silent / logging disabled).

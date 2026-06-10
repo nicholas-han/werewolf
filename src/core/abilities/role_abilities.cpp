@@ -119,6 +119,7 @@ void MechanicLearn::actAtNight(NightContext& /*ctx*/, GameState& state, Player& 
     if (t == nullptr) return;
     state.mechanicLearned = t->role().kind();  // disguise takes effect immediately
     state.mechanicLearnDay = state.day;        // active abilities start the next night
+    provider.onMechanicLearnResult(owner.id(), *target, *state.mechanicLearned);  // private (§11)
 
     // Witch: copy the witch's *current* remaining potions (BRD §2 — she acts first,
     // so anything already spent tonight is gone). Independent of the real witch.

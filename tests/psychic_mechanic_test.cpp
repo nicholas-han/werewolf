@@ -93,6 +93,28 @@ TEST(MechanicWolf, LearnRecordsRoleOnceOnly) {
     EXPECT_EQ(*s.mechanicLearned, RoleKind::Civilian);
 }
 
+TEST(MechanicWolf, LearnNotifiesMechanicOfRole) {
+    GameState s = psychicBoard();  // mechanic = seat 4; witch = seat 6
+    MechanicLearn learn;
+    NightContext ctx;
+    ScriptedDecisionProvider dp;
+
+    dp.mechanicLearns = {6};  // learn the witch
+    learn.actAtNight(ctx, s, *s.find(4), dp);
+    ASSERT_EQ(dp.mechanicLearnResults.size(), 1u);
+    const auto& [mechId, targetId, role] = dp.mechanicLearnResults.front();
+    EXPECT_EQ(mechId, 4);
+    EXPECT_EQ(targetId, 6);
+    EXPECT_EQ(role, RoleKind::Witch);
+
+    // Declining to learn delivers no result.
+    GameState s2 = psychicBoard();
+    ScriptedDecisionProvider dp2;  // empty mechanicLearns -> nullopt -> no learn
+    NightContext ctx2;
+    learn.actAtNight(ctx2, s2, *s2.find(4), dp2);
+    EXPECT_TRUE(dp2.mechanicLearnResults.empty());
+}
+
 // ---------- MechanicWolf lone knife (BRD §2) ----------
 
 TEST(MechanicWolf, LoneKnifeOnlyAfterOtherWolvesDie) {

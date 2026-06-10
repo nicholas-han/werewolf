@@ -44,6 +44,8 @@ public:
     std::vector<std::tuple<int, int, RoleKind>> psychicResults;
     // (hunterId, canShoot) captured per nightly gun-check.
     std::vector<std::pair<int, bool>> hunterGunChecks;
+    // (mechanicId, targetId, learnedRole) captured when the mechanic learns.
+    std::vector<std::tuple<int, int, RoleKind>> mechanicLearnResults;
 
     std::optional<int> chooseNightKill(const GameState&,
                                        const std::vector<int>&) override {
@@ -138,6 +140,10 @@ public:
 
     void onHunterGunCheck(int hunterId, bool canShoot) override {
         hunterGunChecks.emplace_back(hunterId, canShoot);
+    }
+
+    void onMechanicLearnResult(int mechanicId, int targetId, RoleKind learnedRole) override {
+        mechanicLearnResults.emplace_back(mechanicId, targetId, learnedRole);
     }
 
     void notify(const std::string& message) override { events.push_back(message); }
