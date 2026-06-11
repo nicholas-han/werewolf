@@ -21,6 +21,11 @@ enum class DeathCause { Killed, Poisoned, Exiled, Shot, BlownUp };
 // Coarse game phase. Sub-steps are handled by the flow layer (M1+).
 enum class Phase { Night, Day };
 
+// Kind of spoken record (BRD roadmap §4 发言记录). Statement = the daytime
+// speaking phase; LastWords = 遗言 said on death. Campaign speeches are skipped
+// by the engine today and not recorded.
+enum class SpeechKind { Statement, LastWords };
+
 // Concrete roles (BRD §3). 9-player: Werewolf/Seer/Witch/Hunter/Civilian.
 // 12-player guard board adds Guardian (守卫) and WolfGun (狼枪).
 // 12-player psychic board adds Psychic (通灵师) and MechanicWolf (机械狼).
@@ -73,6 +78,14 @@ constexpr std::string_view to_string(DeathCause c) {
         case DeathCause::Exiled: return "Exiled";
         case DeathCause::Shot: return "Shot";
         case DeathCause::BlownUp: return "BlownUp";
+    }
+    return "?";
+}
+
+constexpr std::string_view to_string(SpeechKind k) {
+    switch (k) {
+        case SpeechKind::Statement: return "Statement";
+        case SpeechKind::LastWords: return "LastWords";
     }
     return "?";
 }

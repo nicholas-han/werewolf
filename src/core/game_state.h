@@ -50,6 +50,24 @@ public:
     // Event / history log.
     std::vector<std::string> log;
 
+    // Speech record (BRD roadmap §4 发言记录): every spoken statement / last words
+    // kept for replay (复盘). Part of the truth layer's history; not snapshotted
+    // because the 拍刀 sandbox (§4.4) only simulates deaths, never speech.
+    struct SpeechEntry {
+        int day = 0;
+        SpeechKind kind = SpeechKind::Statement;
+        int speakerId = 0;
+        int seat = 0;
+        std::string text;
+    };
+    std::vector<SpeechEntry> speeches;
+
+    // Append a non-empty speech (empty text = the speaker passed; not recorded).
+    void recordSpeech(int day, SpeechKind kind, int speakerId, int seat, std::string text) {
+        if (text.empty()) return;
+        speeches.push_back({day, kind, speakerId, seat, std::move(text)});
+    }
+
     // Rollbackable snapshot of all mutable state (BRD §4.4 sandbox foundation):
     // per-player status + the game-level potion/sheriff/phase/day, plus the log
     // length so sandbox narration can be trimmed away on restore.

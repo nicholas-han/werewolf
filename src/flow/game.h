@@ -67,7 +67,10 @@ private:
 
     // M5 moderator cues:
     std::string moderatorStatus() const;                 // ④ status board
-    void cueSpeechOrder(int nightDeathCount, int singleDeadSeat);  // ③ 死左/死右
+    // ③ 死左/死右: announces and returns the day's speaking order (alive seats).
+    std::vector<int> cueSpeechOrder(int nightDeathCount, int singleDeadSeat);
+    // §4 发言记录: collect each speaker's words in order into the speech log.
+    void collectDaySpeeches(const std::vector<int>& orderSeats);
 
     std::vector<int> aliveIds() const;
     std::vector<int> aliveWolfIds() const;

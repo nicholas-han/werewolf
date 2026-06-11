@@ -67,6 +67,10 @@ GameResult Settlement::resolveRecorded(std::deque<Player*> worklist) {
         announceDeath(*dead);
         if (hasLastWords(*dead)) {  // §5.3 last-words cue + pacing
             provider_.notify(txt::lastWordsCue(dead->name()));
+            std::string lw =  // §4 发言记录: capture 遗言 for replay
+                provider_.collectSpeech(state_, dead->id(), SpeechKind::LastWords, state_.day);
+            state_.recordSpeech(state_.day, SpeechKind::LastWords, dead->id(), dead->seat(),
+                                std::move(lw));
             provider_.pause(txt::lastWordsPause(dead->name()));
         }
         maybeTransferBadge(*dead);  // §7.6: transfer before death-triggered skills

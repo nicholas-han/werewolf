@@ -136,7 +136,11 @@ public:
     explicit MechanicLearnedProtect(bool allowConsecutiveSameTarget)
         : allowConsecutive_(allowConsecutiveSameTarget) {}
     std::string name() const override { return "MechanicLearnedProtect"; }
-    int nightOrder() const override { return 6; }  // alongside the real guard
+    // Within the mechanic's own turn (§3: mechanic acts as one block, after the
+    // hunter), not at the real guard's slot — otherwise the mechanic would open
+    // its eyes twice a night. Protection only fills NightContext for the dawn
+    // resolution, so its order relative to other roles doesn't matter.
+    int nightOrder() const override { return 39; }  // mechanic block: learn(38) -> protect(39)
     std::string nightCue() const override { return "机械狼"; }
     void actAtNight(NightContext& ctx, GameState& state, Player& owner,
                     DecisionProvider& provider) override;

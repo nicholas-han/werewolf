@@ -28,6 +28,7 @@ public:
     std::deque<std::optional<int>> guards;
     std::deque<std::optional<int>> mechanicLearns;
     std::deque<std::optional<int>> mechanicBigKnives;
+    std::deque<std::string> speeches;  // BRD §4 发言记录: FIFO speech/last-words text
 
     // Sheriff election (BRD §7).
     std::deque<bool> runForSheriff;
@@ -43,6 +44,8 @@ public:
     std::vector<std::tuple<int, int, RoleKind>> psychicResults;
     // (hunterId, canShoot) captured per nightly gun-check.
     std::vector<std::pair<int, bool>> hunterGunChecks;
+    // (mechanicId, targetId, learnedRole) captured when the mechanic learns.
+    std::vector<std::tuple<int, int, RoleKind>> mechanicLearnResults;
 
     std::optional<int> chooseNightKill(const GameState&,
                                        const std::vector<int>&) override {
@@ -120,6 +123,13 @@ public:
         return popOpt(badgeTransfers);
     }
 
+    std::string collectSpeech(const GameState&, int, SpeechKind, int) override {
+        if (speeches.empty()) return "";
+        std::string v = speeches.front();
+        speeches.pop_front();
+        return v;
+    }
+
     void onInspectResult(int seerId, int targetId, bool isWolf) override {
         inspectResults.emplace_back(seerId, targetId, isWolf);
     }
@@ -130,6 +140,10 @@ public:
 
     void onHunterGunCheck(int hunterId, bool canShoot) override {
         hunterGunChecks.emplace_back(hunterId, canShoot);
+    }
+
+    void onMechanicLearnResult(int mechanicId, int targetId, RoleKind learnedRole) override {
+        mechanicLearnResults.emplace_back(mechanicId, targetId, learnedRole);
     }
 
     void notify(const std::string& message) override { events.push_back(message); }

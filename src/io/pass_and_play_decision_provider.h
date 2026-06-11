@@ -50,6 +50,7 @@ public:
     void onInspectResult(int seerId, int targetId, bool isWolf) override;
     void onPsychicResult(int psychicId, int targetId, RoleKind shownRole) override;
     void onHunterGunCheck(int hunterId, bool canShoot) override;
+    void onMechanicLearnResult(int mechanicId, int targetId, RoleKind learnedRole) override;
 
     // Public output — ends any open private hand-off first, then shows to all.
     void notify(const std::string& message) override;

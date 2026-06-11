@@ -43,6 +43,37 @@ long long nowTicks() {
     return std::chrono::system_clock::now().time_since_epoch().count();
 }
 
+// Vote-tally formatting shared by the exile vote and the sheriff election.
+std::string weightStr(double w) {  // weights are multiples of 0.5 (警徽 1.5)
+    const double r = std::round(w * 2) / 2;
+    const long whole = static_cast<long>(std::floor(r));
+    return (r == std::floor(r)) ? std::to_string(whole) : std::to_string(whole) + ".5";
+}
+
+std::string nameOrId(const GameState& s, int id) {
+    const Player* p = s.find(id);
+    return p ? p->name() : ("#" + std::to_string(id));
+}
+
+std::string joinNames(const GameState& s, const std::vector<int>& ids) {
+    std::string out;
+    for (int id : ids) {
+        if (!out.empty()) out += ", ";
+        out += nameOrId(s, id);
+    }
+    return out;
+}
+
+std::string fmtVotes(const GameState& s, const std::map<int, double>& counts) {
+    if (counts.empty()) return "(无人投票)";
+    std::string out;
+    for (const auto& [id, w] : counts) {
+        if (!out.empty()) out += ", ";
+        out += nameOrId(s, id) + "=" + weightStr(w);
+    }
+    return out;
+}
+
 }  // namespace
 
 Game::Game(Board board, DecisionProvider& provider,
@@ -97,12 +128,12 @@ std::string Game::moderatorStatus() const {
     return s;
 }
 
-void Game::cueSpeechOrder(int nightDeathCount, int singleDeadSeat) {
+std::vector<int> Game::cueSpeechOrder(int nightDeathCount, int singleDeadSeat) {
     std::vector<int> aliveSeats;
     for (const Player& p : state_.players) {
         if (p.isAlive()) aliveSeats.push_back(p.seat());
     }
-    if (aliveSeats.empty()) return;
+    if (aliveSeats.empty()) return {};
     std::sort(aliveSeats.begin(), aliveSeats.end());
 
     const int total = static_cast<int>(state_.players.size());
@@ -157,6 +188,17 @@ void Game::cueSpeechOrder(int nightDeathCount, int singleDeadSeat) {
         names += p ? p->name() : ("#" + std::to_string(seatId));
     }
     provider_.notify(txt::speakingOrder(names));
+    return order;
+}
+
+void Game::collectDaySpeeches(const std::vector<int>& orderSeats) {
+    for (int seat : orderSeats) {
+        const Player* p = state_.find(seat);
+        if (p == nullptr || !p->isAlive()) continue;
+        std::string text =
+            provider_.collectSpeech(state_, p->id(), SpeechKind::Statement, state_.day);
+        state_.recordSpeech(state_.day, SpeechKind::Statement, p->id(), seat, std::move(text));
+    }
 }
 
 GameResult Game::runNight() {
@@ -315,6 +357,7 @@ Game::ElectionOutcome Game::runSheriffElection() {
         return {GameResult::Ongoing, false};
     }
     if (remaining.size() == 1) {  // §7.2-6: auto-elected
+        provider_.notify(txt::autoSheriff(nameOrId(state_, remaining.front())));
         electSheriff(remaining.front());
         return {GameResult::Ongoing, false};
     }
@@ -329,22 +372,30 @@ Game::ElectionOutcome Game::runSheriffElection() {
         return counts;
     };
 
+    provider_.notify(txt::sheriffVoteHeader());
+    provider_.notify(txt::sheriffCandidates(joinNames(state_, remaining)));
+
     std::vector<int> firstVoters;
     for (int id : alive) {
         if (!contains(candidates, id)) firstVoters.push_back(id);
     }
-    std::vector<int> leaders = topCandidates(tallySheriff(firstVoters, remaining));
+    std::map<int, double> counts = tallySheriff(firstVoters, remaining);
+    provider_.notify(txt::sheriffVotes(fmtVotes(state_, counts)));
+    std::vector<int> leaders = topCandidates(counts);
     if (leaders.size() == 1) {
         electSheriff(leaders.front());
         return {GameResult::Ongoing, false};
     }
 
     // Runoff (§7.3): everyone except the tied candidates re-votes among them.
+    provider_.notify(txt::sheriffRunoffTie(joinNames(state_, leaders)));
     std::vector<int> runoffVoters;
     for (int id : alive) {
         if (!contains(leaders, id)) runoffVoters.push_back(id);
     }
-    std::vector<int> leaders2 = topCandidates(tallySheriff(runoffVoters, leaders));
+    std::map<int, double> counts2 = tallySheriff(runoffVoters, leaders);
+    provider_.notify(txt::sheriffRunoffVotes(fmtVotes(state_, counts2)));
+    std::vector<int> leaders2 = topCandidates(counts2);
     if (leaders2.size() == 1) {
         electSheriff(leaders2.front());
         return {GameResult::Ongoing, false};
@@ -356,31 +407,8 @@ Game::ElectionOutcome Game::runSheriffElection() {
 
 std::optional<int> Game::resolveExile() {
     const std::vector<int> alive = aliveIds();
-
-    auto wt = [](double w) -> std::string {
-        const double r = std::round(w * 2) / 2;  // weights are multiples of 0.5
-        const long whole = static_cast<long>(std::floor(r));
-        return (r == std::floor(r)) ? std::to_string(whole) : std::to_string(whole) + ".5";
-    };
-    auto fmtVotes = [&](const std::map<int, double>& counts) -> std::string {
-        if (counts.empty()) return "(无人投票)";
-        std::string s;
-        for (const auto& [id, w] : counts) {
-            if (!s.empty()) s += ", ";
-            const Player* p = state_.find(id);
-            s += (p ? p->name() : ("#" + std::to_string(id))) + "=" + wt(w);
-        }
-        return s;
-    };
-    auto names = [&](const std::vector<int>& ids) -> std::string {
-        std::string s;
-        for (int id : ids) {
-            if (!s.empty()) s += ", ";
-            const Player* p = state_.find(id);
-            s += p ? p->name() : ("#" + std::to_string(id));
-        }
-        return s;
-    };
+    auto fmt = [&](const std::map<int, double>& counts) { return fmtVotes(state_, counts); };
+    auto names = [&](const std::vector<int>& ids) { return joinNames(state_, ids); };
 
     provider_.notify(txt::voteHeader());
 
@@ -397,7 +425,7 @@ std::optional<int> Game::resolveExile() {
             if (pick && contains(alive, *pick)) counts[*pick] += 1.0;
         }
     }
-    provider_.notify(txt::firstRoundVotes(fmtVotes(counts)));
+    provider_.notify(txt::firstRoundVotes(fmt(counts)));
     std::vector<int> leaders = topCandidates(counts);
 
     if (leaders.empty()) {
@@ -422,7 +450,7 @@ std::optional<int> Game::resolveExile() {
         std::optional<int> pick = provider_.chooseVote(state_, v, leaders);
         if (pick && contains(leaders, *pick)) counts2[*pick] += 1.0;
     }
-    provider_.notify(txt::runoffVotes(fmtVotes(counts2)));
+    provider_.notify(txt::runoffVotes(fmt(counts2)));
     std::vector<int> leaders2 = topCandidates(counts2);
 
     if (leaders2.size() == 1) {
@@ -459,8 +487,9 @@ GameResult Game::runDay() {
     if (GameResult r = announceNightDeaths(); r != GameResult::Ongoing) return r;
 
     // 发言顺序 cue (③ §7.1.2): single death -> 死左/死右; multi / peaceful -> from sheriff.
-    cueSpeechOrder(nightDeathCount, singleDeadSeat);
+    const std::vector<int> speakOrder = cueSpeechOrder(nightDeathCount, singleDeadSeat);
     provider_.notify(txt::speechPhase());
+    collectDaySpeeches(speakOrder);  // §4 发言记录
 
     // Daytime self-destruct during 发言 (§2): day ends immediately, no vote.
     if (board_.config.blownUpEnabled) {
