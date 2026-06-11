@@ -464,7 +464,7 @@ std::optional<int> Game::resolveExile() {
 
 GameResult Game::runDay() {
     provider_.notify(txt::dayBanner(state_.day));
-    provider_.notify(moderatorStatus());  // ④ status board
+    provider_.notifyModerator(moderatorStatus());  // ④ status board (god-view, §11)
 
     // Sheriff election on day 1 (or the deferred day-2 vote), BEFORE 公布死讯 (§7.2).
     const bool doElection = board_.config.sheriffEnabled && !electionResolved_ &&
