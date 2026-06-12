@@ -7,6 +7,7 @@
 #include "core/board.h"
 #include "core/enums.h"
 #include "core/game_state.h"
+#include "core/messages.h"
 #include "flow/game.h"
 #include "flow/win_condition.h"
 #include "io/scripted_decision_provider.h"
@@ -150,4 +151,30 @@ TEST(Game, TieGoesToRunoffThenNoExile) {
     EXPECT_FALSE(game.state().find(2)->isAlive());
     EXPECT_TRUE(game.state().find(3)->isAlive());
     EXPECT_TRUE(game.state().find(1)->isAlive());
+}
+
+TEST(Game, DeadRolesStillCuedAtNight) {
+    // §11: a power role's night phase must be narrated every night even after it
+    // dies — a missing 睁眼 cue would reveal the role (and which seat held it) is
+    // gone. seats: 1 = wolf, 2 = seer, 3-4 = civilians.
+    Board board;
+    board.name = "dead-cue";
+    board.roster = {{RoleKind::Werewolf, 1}, {RoleKind::Seer, 1}, {RoleKind::Civilian, 2}};
+    board.config.winRule = WinRule::KillAll;
+    board.config.sheriffEnabled = false;
+
+    ScriptedDecisionProvider dp;
+    dp.nightKills = {2, 3};  // n1: kill the seer ; n2: kill a civ -> parity -> WolfWins
+
+    Game game(board, dp);
+    EXPECT_EQ(game.run(), GameResult::WolfWins);
+    EXPECT_FALSE(game.state().find(2)->isAlive());  // the seer died on night 1
+
+    int nights = 0, seerCues = 0;
+    for (const std::string& e : dp.events) {
+        if (e.find("天黑请闭眼") != std::string::npos) ++nights;
+        if (e == txt::openEyes("预言家")) ++seerCues;
+    }
+    EXPECT_EQ(nights, 2);
+    EXPECT_EQ(seerCues, nights);  // seer phase narrated every night, alive or dead
 }
