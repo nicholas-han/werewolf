@@ -21,6 +21,8 @@ add_library(werewolf_core
     src/flow/game.cpp
     src/io/console_decision_provider.cpp
     src/io/pass_and_play_decision_provider.cpp
+    src/io/routing_decision_provider.cpp
+    src/io/bot_channel.cpp
 )
 target_include_directories(werewolf_core PUBLIC src)
 target_compile_features(werewolf_core PUBLIC cxx_std_20)
@@ -75,6 +77,9 @@ if(WEREWOLF_BUILD_TESTS)
     add_executable(speech_log_test tests/speech_log_test.cpp)
     target_link_libraries(speech_log_test PRIVATE werewolf_core GTest::gtest_main)
 
+    add_executable(routing_test tests/routing_test.cpp)
+    target_link_libraries(routing_test PRIVATE werewolf_core GTest::gtest_main)
+
     include(GoogleTest)
     gtest_discover_tests(core_test)
     gtest_discover_tests(flow_test)
@@ -87,4 +92,5 @@ if(WEREWOLF_BUILD_TESTS)
     gtest_discover_tests(psychic_mechanic_test)
     gtest_discover_tests(pass_and_play_test)
     gtest_discover_tests(speech_log_test)
+    gtest_discover_tests(routing_test)
 endif()

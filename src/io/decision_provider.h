@@ -174,9 +174,22 @@ public:
     // ready to continue. No-op for scripted/bot providers.
     virtual void pause(const std::string& note) { (void)note; }
 
-    // Directed/broadcast notification for UI / observers / logging (BRD §11).
-    // M1 uses it as a simple broadcast log; per-player targeting comes later.
+    // Public broadcast for UI / observers / logging — everyone may see it (BRD
+    // §11): banners, death announcements, vote tallies, etc.
     virtual void notify(const std::string& message) { (void)message; }
+
+    // Directed to ONE player (BRD §11): a private notice only that player may see
+    // (e.g. the witch's "你今晚被刀"). Default routes to notify() so single-screen
+    // providers behave as before; per-player providers override it.
+    virtual void notifyPlayer(int playerId, const std::string& message) {
+        (void)playerId; notify(message);
+    }
+
+    // God-view, for the human moderator / spectator ONLY — never for players
+    // (BRD §11), e.g. the status board that lists everyone's role. Default routes
+    // to notify() (the single-screen 法官 wants to see it); per-player providers
+    // must keep it away from players.
+    virtual void notifyModerator(const std::string& message) { notify(message); }
 };
 
 }  // namespace ww

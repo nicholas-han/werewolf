@@ -56,6 +56,12 @@ public:
     void notify(const std::string& message) override;
     void pause(const std::string& note) override;
 
+    // Directed notice -> shown inside the target player's private hand-off (§11).
+    void notifyPlayer(int playerId, const std::string& message) override;
+    // God-view status board -> suppressed: a single passed-around device has no
+    // moderator-only screen, so showing it would leak everyone's role (§11).
+    void notifyModerator(const std::string& message) override;
+
 private:
     std::istream& in_;
     std::ostream& out_;

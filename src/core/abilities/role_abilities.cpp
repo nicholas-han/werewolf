@@ -61,7 +61,8 @@ void WitchPotions::actAtNight(NightContext& ctx, GameState& state, Player& owner
         } else {
             // She is the knifed one but cannot self-rescue: still tell her she was
             // knifed (BRD §2 死讯可见性; e.g. a guard may secretly save her).
-            provider.notify("【女巫】你今晚被刀（无法自救）");
+            // Directed — only the witch may learn this (§11).
+            provider.notifyPlayer(owner.id(), "【女巫】你今晚被刀（无法自救）");
         }
     }
 

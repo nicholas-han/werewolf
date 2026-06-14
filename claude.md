@@ -353,6 +353,8 @@
 
 **关键工程约束——「流程节点」与「信息暴露」解耦**：即使某玩家这一步拿不到任何信息（如女巫已无解药），法官**仍要照常走完该节点**（相同提示、相近耗时），以免其他玩家从「跳过 / 节奏 / 时长」反推出隐藏信息。`DecisionProvider` 的 `notify` 必须**按玩家定向**，且「是否触发节点」独立于「是否真的下发信息」。
 
+- **死亡的身份其夜间环节同样照走（防露馅）**：每一夜，**花名册里所有「有夜间环节」的身份都要逐个走一遍睁眼/闭眼**，**无论该身份的玩家是死是活**；只有**存活者**真正行动（死者只走过场、无实际效果）。否则某神死后其睁眼提示当晚消失，外人即可从「今晚没叫女巫」反推出女巫已死（甚至反推昨日死的那个号就是女巫）。实现：`runNight` 的夜间行动列表从**全体玩家**（含已出局）收集，按夜晚顺序广播睁眼/闭眼，仅对存活 owner 调用 `actAtNight`。
+
 ## 12. 目录结构（建议）
 
 ```
@@ -366,9 +368,10 @@ werewolf/
 │   │   └── abilities/ # ability.h（基类+钩子）, role_abilities.*（NightKill/Inspect/WitchPotions/Protect/DeathTriggerShoot）
 │   ├── flow/          # game.*（编排：夜/昼/竞选）, settlement.*（死亡结算核心）,
 │   │                  #   win_condition.*, last_words.h, speech_order.h, transcript.h（发言复盘）, paidao.*（拍刀沙盒）
-│   ├── io/            # decision_provider.h, scripted_/console_/pass_and_play_decision_provider.*
-│   └── app/           # main.cpp（命令行入口：发牌方式 + 主持整局）
-└── tests/             # core/flow/roles/sheriff/console/judge/sandbox/board12/psychic_mechanic/pass_and_play/speech_log_test.cpp（GoogleTest，88 用例）
+│   ├── io/            # decision_provider.h, scripted_/console_/pass_and_play_decision_provider.*,
+│   │                  #   player_channel.h（每玩家通道）, routing_decision_provider.*（按玩家路由）, scripted_/bot_channel.*
+│   └── app/           # main.cpp（命令行入口：发牌方式 + 主持整局 / bot 自动对战）
+└── tests/             # …/psychic_mechanic/pass_and_play/speech_log/routing_test.cpp（GoogleTest，96 用例）
 ```
 
 ## 13. 技术栈与约定
@@ -406,8 +409,9 @@ werewolf/
       - 配套：猎人每晚开枪手势通知（§5.1）；自爆狼当夜参与讨论的澄清（§2，无机制影响）。
   11. ✅ **M10** 传递游玩（单设备多人）：`PassAndPlayDecisionProvider` 用「清屏 + 私密交接」在一台设备上实现每人只看自己信息（§11），程序自动当裁判；开局私密发牌（狼队互见、机械狼不见队友）。无需网络。
   12. ✅ **M11** 发言记录与复盘（路线图第 4 项）：`DecisionProvider::collectSpeech` 按发言顺序收每人白天发言 + 出局者遗言，存入 `GameState.speeches`（真相层历史、不进 snapshot——拍刀沙盒只推演死亡）；`flow/transcript.h` 的 `formatTranscript` 按天分组复盘。控制台/传递游玩用 `setRecordSpeech` 开关（默认关，开局菜单可选）；语音转写仅是同一字符串的另一输入源（接口已留，未实装）。
-- **当前状态**：M0–M10 已合入 `main`；M11 在 `m11-speech-log` 分支；GoogleTest 共 **88** 个用例全绿；`./build/werewolf` 可选 3 个板 + 单屏法官/传递游玩两种玩法 + 可选发言记录复盘。
-- **尚未实现（已在规则中定义，待后续）**：拍刀阶段 C 自动最优搜索（§4.4）；**真·联机**（多设备/网络，per-player 通道）——单设备传递游玩已落地 §11 私密性。
+  13. ✅ **M12** 多人地基：按玩家路由（路线图第 3 项「多人」的引擎层 + 第 5 项 AI 的运行基座）。`PlayerChannel`（每玩家一条通道：`chooseAmong/confirm/speak/tell` + `AskKind`）+ `RoutingDecisionProvider`（实现现有 `DecisionProvider`，把每次调用按 id 分发；公共广播、私密 `notifyPlayer` 定向、法官全知 `notifyModerator` 只给观战）。狼队「统一刀」由最小座号存活狼**代表拍板**、其余开睁眼狼私下获知。新增 `notifyPlayer`/`notifyModerator` 两个定向接口（默认回退 `notify`，单屏行为不变），并**修复两处广播泄露**：女巫「你今晚被刀」改定向、身份状态栏改 `notifyModerator`（同时修掉 M10 传递游玩公开身份表的泄露）。`ScriptedChannel`（测试）/`BotChannel`（合法走子，进程内多座位无真人也能跑完整局）；`app` 加「AI 自动对战」玩法。**引擎纯逻辑不变。**
+- **当前状态**：M0–M11 已合入 `main`；M12 在 `m12-multiplayer-channels` 分支；GoogleTest 共 **96** 个用例全绿；`./build/werewolf` 可选 3 个板 + 单屏法官 / 传递游玩 / AI 自动对战 三种玩法 + 可选发言记录复盘。
+- **尚未实现（已在规则中定义，待后续）**：拍刀阶段 C 自动最优搜索（§4.4）；**真·联机**（多设备/网络传输）——按玩家路由的引擎层已由 M12 落地，只差网络传输（一个 `NetworkChannel`）与真人多终端/浏览器客户端；AI agent 玩家（一个 `AgentChannel`，复用 M12 的 `PlayerChannel`）。
 - **后续待定义（用户提供）**：更多板子（12 人预女猎白、丘比特/骑士等）、屠城板、遗言细则、平票变体。
 
 ### 产品形态路线图（远期，先记录后做）
@@ -418,8 +422,9 @@ werewolf/
 2. ✅ **随机发牌**：程序随机分配身份（替代手动录入），法官只看分配结果。
 3. **多人**：每个玩家只看到自己被允许的信息（§11 按玩家定向）。
    - ✅ **单设备「传递游玩」(M10)**：`PassAndPlayDecisionProvider` 清屏+私密交接，一台设备上实现 §11 私密性；机械狼私密操作他人看不到（交接屏隔离），故"统一流程/防泄露"在此形态下天然解决。
-   - ⬜ **真·联机（多设备/网络）**：服务器跑引擎（权威真相层）+ 各端瘦客户端；把 `notify` 改为按玩家路由（`NetworkDecisionProvider`）。届时机械狼的"固定流程 + 私密手势"按 per-player 通道实现。引擎纯逻辑不变。
+   - ✅ **按玩家路由地基 (M12)**：`PlayerChannel` + `RoutingDecisionProvider` 把引擎的单一 `DecisionProvider` 拆成每玩家一条通道；公共广播、私密 `notifyPlayer`、法官全知 `notifyModerator` 三类信息分流（落实 §11，并修复 M10 身份表泄露）。进程内即可用脚本/`BotChannel` 多座位跑整局。
+   - ⬜ **真·联机（多设备/网络）**：服务器跑引擎（权威真相层）+ 各端瘦客户端。地基已就绪，只差一个 `NetworkChannel`（把 `PlayerChannel` 接到 socket/WebSocket）+ 真人客户端；引擎与路由层不变。
 4. ✅ **发言记录 (M11)**：`collectSpeech` 收白天发言 + 遗言，存 `GameState.speeches`，结束后 `formatTranscript` 复盘。文本输入已实装；语音转写是同一字符串的另一输入源（接口已留）。
-5. **AI Agent 玩家**：可接入不同 AI agent 作为玩家加入对局，与真人/彼此博弈（复用 `DecisionProvider` 接口：`BotDecisionProvider` / `AgentDecisionProvider`）。
+5. **AI Agent 玩家**：可接入不同 AI agent 作为玩家加入对局，与真人/彼此博弈。地基已由 M12 就绪——只需实现一个 `AgentChannel`（`PlayerChannel` 的子类，内部调模型/策略），即可与 `BotChannel`/真人通道混坐同一局；`AskKind` 已把决策意图结构化下发，agent 无需解析中文提示。
 
 > 架构上这些都顺着既有抽象走：玩家行为统一经 `DecisionProvider`；信息下发统一经 `notify`（按玩家定向）；引擎纯逻辑不变。形态演进主要是「换 I/O 实现 + 加网络层」，规则引擎应保持稳定。

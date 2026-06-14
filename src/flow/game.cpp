@@ -213,9 +213,13 @@ GameResult Game::runNight() {
         Player* owner;
         NightActor* actor;
     };
+    // Collect from ALL players, dead included: every night role-phase in the
+    // roster is narrated every night so an outsider can't tell a power role is
+    // gone from a missing 睁眼 cue (BRD §11 — skipping a dead role's phase would
+    // leak that the role, and thus which seat held it, is out). Only living
+    // owners actually act.
     std::vector<Act> acts;
     for (Player& p : state_.players) {
-        if (!p.isAlive()) continue;
         for (const auto& ability : p.role().abilities()) {
             if (auto* na = dynamic_cast<NightActor*>(ability.get())) acts.push_back({&p, na});
         }
@@ -226,6 +230,7 @@ GameResult Game::runNight() {
 
     // Run each role group with "<role>请睁眼 / 请闭眼" narration (BRD M5 ⑤). Actors
     // are sorted by night order, so same-cue actors (e.g. all wolves) are contiguous.
+    // The cue is emitted for every group (alive or not); only living owners act.
     NightContext ctx;
     std::string openCue;
     for (const Act& a : acts) {
@@ -235,7 +240,7 @@ GameResult Game::runNight() {
             provider_.notify(txt::openEyes(cue));
             openCue = cue;
         }
-        a.actor->actAtNight(ctx, state_, *a.owner, provider_);
+        if (a.owner->isAlive()) a.actor->actAtNight(ctx, state_, *a.owner, provider_);
     }
     if (!openCue.empty()) provider_.notify(txt::closeEyes(openCue));
 
@@ -464,7 +469,7 @@ std::optional<int> Game::resolveExile() {
 
 GameResult Game::runDay() {
     provider_.notify(txt::dayBanner(state_.day));
-    provider_.notify(moderatorStatus());  // ④ status board
+    provider_.notifyModerator(moderatorStatus());  // ④ status board (god-view, §11)
 
     // Sheriff election on day 1 (or the deferred day-2 vote), BEFORE 公布死讯 (§7.2).
     const bool doElection = board_.config.sheriffEnabled && !electionResolved_ &&

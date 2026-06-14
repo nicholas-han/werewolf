@@ -12,9 +12,12 @@
 #include "flow/game.h"
 #include "flow/transcript.h"
 #include "flow/win_condition.h"
+#include "io/bot_channel.h"
 #include "io/console_decision_provider.h"
 #include "io/decision_provider.h"
 #include "io/pass_and_play_decision_provider.h"
+#include "io/player_channel.h"
+#include "io/routing_decision_provider.h"
 
 // Command-line entry point (BRD §12 app/, M4 + M5): play one game of the
 // 9-player Seer/Witch/Hunter board on the terminal, moderator-operated.
@@ -97,20 +100,36 @@ int main() {
 
     std::optional<std::vector<RoleKind>> seatRoles = promptSetup(board, std::cin, std::cout);
 
-    std::cout << "玩法：1) 单屏法官（一人主持）  2) 传递游玩（一台设备多人，私密交接）\n> ";
+    std::cout << "玩法：1) 单屏法官（一人主持）  2) 传递游玩（一台设备多人）  "
+                 "3) AI 自动对战（多座位 bot 演示）\n> ";
     std::string modeLine;
     std::getline(std::cin, modeLine);
-    const bool passAndPlay = (!modeLine.empty() && modeLine[0] == '2');
+    const char mode = modeLine.empty() ? '1' : modeLine[0];
+    const bool passAndPlay = (mode == '2');
+    const bool botDemo = (mode == '3');
 
-    std::cout << "记录发言（结束后可复盘）：1) 否（默认）  2) 是\n> ";
-    std::string recLine;
-    std::getline(std::cin, recLine);
-    const bool recordSpeech = (!recLine.empty() && recLine[0] == '2');
+    bool recordSpeech = false;
+    if (!botDemo) {
+        std::cout << "记录发言（结束后可复盘）：1) 否（默认）  2) 是\n> ";
+        std::string recLine;
+        std::getline(std::cin, recLine);
+        recordSpeech = (!recLine.empty() && recLine[0] == '2');
+    }
 
     std::unique_ptr<DecisionProvider> provider;
     PassAndPlayDecisionProvider* pnp = nullptr;
     ConsoleDecisionProvider* console = nullptr;  // base view for shared toggles
-    if (passAndPlay) {
+    // Bot-demo seats: one BotChannel per player, routed by RoutingDecisionProvider
+    // (engine talks to per-seat channels; std::cout is the spectator view).
+    std::vector<std::unique_ptr<BotChannel>> bots;
+    std::map<int, PlayerChannel*> channels;
+    if (botDemo) {
+        for (int seat = 1; seat <= board.totalPlayers(); ++seat) {
+            bots.push_back(std::make_unique<BotChannel>(seat));
+            channels[seat] = bots.back().get();
+        }
+        provider = std::make_unique<RoutingDecisionProvider>(channels, &std::cout);
+    } else if (passAndPlay) {
         auto p = std::make_unique<PassAndPlayDecisionProvider>(std::cin, std::cout);
         pnp = p.get();
         console = p.get();
@@ -120,11 +139,18 @@ int main() {
         console = p.get();
         provider = std::move(p);
     }
-    console->setRecordSpeech(recordSpeech);
+    if (console) console->setRecordSpeech(recordSpeech);
 
     Game game(board, *provider, seatRoles);
 
-    if (passAndPlay) {
+    if (botDemo) {
+        // Spectator view: show the deal, then watch the bots play it out.
+        std::cout << "【观战视角】座位 -> 身份（bot 自动对战）:\n";
+        for (const Player& p : game.state().players) {
+            std::cout << "  座位 " << p.seat() << ": " << txt::role(p.role().kind()) << "\n";
+        }
+        std::cout << "--------------------------------------------\n";
+    } else if (passAndPlay) {
         // Each player privately learns their own role (wolves see their team; the
         // mechanic does not meet the pack). No public moderator view.
         std::vector<int> openWolves;

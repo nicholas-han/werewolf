@@ -166,4 +166,13 @@ void PassAndPlayDecisionProvider::pause(const std::string& note) {
     ConsoleDecisionProvider::pause(note);
 }
 
+void PassAndPlayDecisionProvider::notifyPlayer(int playerId, const std::string& message) {
+    ensureTurn("玩家 P" + std::to_string(playerId), playerId);  // private hand-off
+    ConsoleDecisionProvider::notify(message);
+}
+
+void PassAndPlayDecisionProvider::notifyModerator(const std::string& message) {
+    (void)message;  // no moderator-only screen here -> suppress the god-view (§11)
+}
+
 }  // namespace ww
