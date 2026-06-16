@@ -107,13 +107,16 @@ TEST(Sheriff, ConsolidateSingleBadgeBreaksTie) {
 // ---------- Badge transfer on death (BRD §7.6) ----------
 
 TEST(Sheriff, BadgeTransferredWhenSheriffExiled) {
-    // 2 wolf + 3 civ. Civilian seat 3 is sheriff, gets exiled, hands badge to seat 4.
+    // 2 wolf + 4 civ so exiling the civilian sheriff (seat 3) does NOT end the game
+    // (2 wolves vs 3 town -> ongoing), and the badge transfer is meaningful. A later
+    // night kill (seat 5) closes it out via parity.
     ScriptedDecisionProvider dp;
-    dp.runForSheriff = {false, false, true, false, false};  // seat 3 auto-elected
-    dp.votes = {3, 3, 3, 3};            // non-sheriff voters (1,2,4,5) all exile seat 3
+    dp.runForSheriff = {false, false, true, false, false, false};  // seat 3 auto-elected
+    dp.votes = {3, 3, 3, 3, 3};         // non-sheriff voters (1,2,4,5,6) all exile seat 3
     dp.badgeTransfers = {4};            // hand the badge to seat 4
+    dp.nightKills = {std::nullopt, 5};  // n1 peaceful ; n2 -> parity WolfWins
 
-    Game game(mkBoard("transfer", {{RoleKind::Werewolf, 2}, {RoleKind::Civilian, 3}}), dp);
+    Game game(mkBoard("transfer", {{RoleKind::Werewolf, 2}, {RoleKind::Civilian, 4}}), dp);
     game.run();
     ASSERT_TRUE(game.state().sheriffId.has_value());
     EXPECT_EQ(*game.state().sheriffId, 4);
@@ -122,15 +125,33 @@ TEST(Sheriff, BadgeTransferredWhenSheriffExiled) {
 }
 
 TEST(Sheriff, BadgeDestroyedWhenSheriffDies) {
+    // Same ongoing setup; the exiled sheriff tears up the badge instead.
     ScriptedDecisionProvider dp;
-    dp.runForSheriff = {false, false, true, false, false};
-    dp.votes = {3, 3, 3, 3};
+    dp.runForSheriff = {false, false, true, false, false, false};
+    dp.votes = {3, 3, 3, 3, 3};
     dp.badgeTransfers = {std::nullopt};  // tear up the badge (撕毁)
+    dp.nightKills = {std::nullopt, 5};
 
-    Game game(mkBoard("destroy", {{RoleKind::Werewolf, 2}, {RoleKind::Civilian, 3}}), dp);
+    Game game(mkBoard("destroy", {{RoleKind::Werewolf, 2}, {RoleKind::Civilian, 4}}), dp);
     game.run();
     EXPECT_FALSE(game.state().sheriffId.has_value());
     EXPECT_TRUE(hasEvent(dp, txt::badgeDestroyed()));
+}
+
+TEST(Sheriff, NoBadgeTransferWhenDeathEndsGame) {
+    // §7.6/§4.2: if the sheriff's death itself decides the game, the (now moot)
+    // badge is NOT transferred — the moderator is never even prompted. Here exiling
+    // the civilian sheriff (seat 3) leaves 2 wolves vs 2 town -> parity WolfWins.
+    ScriptedDecisionProvider dp;
+    dp.runForSheriff = {false, false, true, false, false};
+    dp.votes = {3, 3, 3, 3};
+    dp.badgeTransfers = {4};  // provided, but must NOT be consumed
+
+    Game game(mkBoard("end-no-transfer", {{RoleKind::Werewolf, 2}, {RoleKind::Civilian, 3}}), dp);
+    EXPECT_EQ(game.run(), GameResult::WolfWins);
+    EXPECT_EQ(dp.badgeTransfers.size(), 1u);                  // transfer never asked
+    EXPECT_FALSE(hasEvent(dp, txt::badgeTransferred("P4")));  // no transfer happened
+    EXPECT_FALSE(hasEvent(dp, txt::badgeDestroyed()));
 }
 
 TEST(Sheriff, TransferHappensBeforeHunterShot) {

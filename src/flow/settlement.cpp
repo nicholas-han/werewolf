@@ -135,11 +135,13 @@ GameResult Settlement::resolveRecorded(std::deque<Player*> worklist,
         Player* dead = q.front();
         q.pop_front();
 
-        maybeTransferBadge(*dead);  // §7.6: transfer before death-triggered skills
-
+        // §4.2: if this death already decided the game, it ends NOW — no badge
+        // transfer (a moot badge is never reassigned, §7.6) and no death triggers.
         if (GameResult r = evaluateWin(state_, config_); r != GameResult::Ongoing) {
-            return r;  // §4.2: decided -> stop, no further triggers
+            return r;
         }
+
+        maybeTransferBadge(*dead);  // §7.6: transfer (game ongoing) before this death's skills
 
         for (const auto& ability : dead->role().abilities()) {
             auto* trigger = dynamic_cast<DeathTrigger*>(ability.get());
