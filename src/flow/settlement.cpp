@@ -1,6 +1,7 @@
 #include "flow/settlement.h"
 
 #include <algorithm>
+#include <map>
 #include <string>
 
 #include "core/messages.h"
@@ -71,18 +72,44 @@ std::vector<Player*> Settlement::record(const std::vector<PendingDeath>& batch) 
     return newly;
 }
 
-GameResult Settlement::resolveRecorded(std::deque<Player*> worklist,
-                                      const std::vector<int>& lastWordsOrder) {
-    auto bySeat = [](const Player* a, const Player* b) { return a->seat() < b->seat(); };
+GameResult Settlement::recordBatchSequential(const std::vector<PendingDeath>& batch,
+                                             std::vector<Player*>& newlyOut) {
+    // Group causes by player, keeping FIRST-appearance order = the night's
+    // resolution order (knife pushed before poison). A 同刀同毒 player is one
+    // death, positioned at its first (knife) cause.
+    std::vector<int> order;
+    std::map<int, std::vector<DeathCause>> causes;
+    for (const PendingDeath& pd : batch) {
+        if (causes.find(pd.playerId) == causes.end()) order.push_back(pd.playerId);
+        causes[pd.playerId].push_back(pd.cause);
+    }
 
-    // The simultaneous batch. Announce all of it together in seat order, so the
-    // public never sees a settlement order (§5.2 公布顺序).
-    std::vector<Player*> batch(worklist.begin(), worklist.end());
-    std::sort(batch.begin(), batch.end(), bySeat);
+    GameResult decided = GameResult::Ongoing;
+    for (int id : order) {
+        Player* p = state_.find(id);
+        if (p == nullptr) continue;
+        const bool wasAlive = p->isAlive();
+        for (DeathCause c : causes[id]) p->recordDeath(c, state_.day, state_.phase);
+        if (wasAlive) newlyOut.push_back(p);
+        if (decided == GameResult::Ongoing) {  // §4.2: first death to decide wins
+            GameResult r = evaluateWin(state_, config_);
+            if (r != GameResult::Ongoing) decided = r;
+        }
+    }
+    return decided;
+}
+
+void Settlement::announceBatch(const std::vector<Player*>& deaths,
+                               const std::vector<int>& lastWordsOrder) {
+    // Announce all together in seat order, so the public never sees a settlement
+    // order (§5.2 公布顺序).
+    std::vector<Player*> batch = deaths;
+    std::sort(batch.begin(), batch.end(),
+              [](const Player* a, const Player* b) { return a->seat() < b->seat(); });
     for (Player* d : batch) announceDeath(*d);
 
-    // Last words for the batch, in the requested order (random for first-night
-    // multi-death, §5.2/§5.3); empty -> seat order.
+    // Last words in the requested order (random for first-night multi-death,
+    // §5.2/§5.3); empty -> seat order.
     std::vector<Player*> lwOrder;
     if (lastWordsOrder.empty()) {
         lwOrder = batch;
@@ -92,19 +119,29 @@ GameResult Settlement::resolveRecorded(std::deque<Player*> worklist,
         }
     }
     for (Player* d : lwOrder) collectLastWords(*d);
+}
+
+GameResult Settlement::resolveRecorded(std::deque<Player*> worklist,
+                                      const std::vector<int>& lastWordsOrder) {
+    std::vector<Player*> batch(worklist.begin(), worklist.end());
+    announceBatch(batch, lastWordsOrder);  // phases 1-2: announce + last words
 
     // Badge transfer + win check + death triggers (seat order), chaining further
     // deaths — each chained death announces + takes last words as it occurs.
+    std::sort(batch.begin(), batch.end(),
+              [](const Player* a, const Player* b) { return a->seat() < b->seat(); });
     std::deque<Player*> q(batch.begin(), batch.end());
     while (!q.empty()) {
         Player* dead = q.front();
         q.pop_front();
 
-        maybeTransferBadge(*dead);  // §7.6: transfer before death-triggered skills
-
+        // §4.2: if this death already decided the game, it ends NOW — no badge
+        // transfer (a moot badge is never reassigned, §7.6) and no death triggers.
         if (GameResult r = evaluateWin(state_, config_); r != GameResult::Ongoing) {
-            return r;  // §4.2: decided -> stop, no further triggers
+            return r;
         }
+
+        maybeTransferBadge(*dead);  // §7.6: transfer (game ongoing) before this death's skills
 
         for (const auto& ability : dead->role().abilities()) {
             auto* trigger = dynamic_cast<DeathTrigger*>(ability.get());

@@ -46,6 +46,9 @@ private:
     bool electionResolved_ = false;   // election finished (with or without a sheriff)
     bool electionDeferred_ = false;   // interrupted on day 1 -> day 2 vote-only
     bool badgeAbandoned_ = false;     // interrupted twice -> no badge for the whole game
+    // §7.5: if day 1 was interrupted AFTER reaching the PK, the carried-over PK
+    // candidates for day 2 (empty = interrupted before the PK -> day 2 re-registers).
+    std::vector<int> deferredPkCandidates_;
 
     GameResult runNight();
     GameResult runDay();
@@ -56,6 +59,10 @@ private:
         bool interrupted = false;  // a wolf self-destructed mid-election (§7.4)
     };
     ElectionOutcome runSheriffElection();
+    // §7.5: the day-2 deferred election — no speeches, a single direct vote. Either
+    // re-registers everyone (interrupted before the PK) or carries only the day-1
+    // PK candidates (interrupted at the PK).
+    ElectionOutcome runDeferredElection();
 
     // Wolves eligible to self-destruct during the election: alive wolves plus any
     // wolf that died at night but isn't announced yet (§2 自爆吞毒).
@@ -73,8 +80,11 @@ private:
     // Announces the pending night deaths and resolves their triggers (§5.3/§2).
     GameResult announceNightDeaths();
     // Announces one night-death batch: header + "顺序不分先后" (§5.2) + settlement,
-    // with a random last-words order for first-night multi-death (§5.2/§5.3).
-    GameResult announceNightBatch(std::vector<Player*> dead);
+    // with a random last-words order for first-night multi-death (§5.2/§5.3). When
+    // `decided` != Ongoing the batch already settled the game (§4.2): announce +
+    // last words only, no triggers; return that pre-decided result.
+    GameResult announceNightBatch(std::vector<Player*> dead,
+                                  GameResult decided = GameResult::Ongoing);
 
     // Exile vote with the sheriff's 归票 weighting (BRD §6/§7.1).
     std::optional<int> resolveExile();

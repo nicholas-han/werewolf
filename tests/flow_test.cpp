@@ -178,3 +178,25 @@ TEST(Game, DeadRolesStillCuedAtNight) {
     EXPECT_EQ(nights, 2);
     EXPECT_EQ(seerCues, nights);  // seer phase narrated every night, alive or dead
 }
+
+TEST(Game, SimultaneousNightDeathsDecidedSequentially) {
+    // §4.2: the last civilian is knifed AND the last wolf is poisoned the same
+    // night. Both "all wolves out" (TownWins) and 屠边 "all civilians out"
+    // (WolfWins) are satisfied at once. Strict sequential settlement in the night's
+    // resolution order (knife before poison) settles the CIVILIAN's death first ->
+    // WolfWins. (The old batch-then-check used evaluateWin's good-priority and would
+    // wrongly return TownWins.)
+    Board board;  // KillSide so the 屠边 (all-civilians-out) branch applies
+    board.name = "simul-death";
+    board.roster = {{RoleKind::Werewolf, 1}, {RoleKind::Witch, 1}, {RoleKind::Hunter, 1},
+                    {RoleKind::Civilian, 1}};
+    board.config.sheriffEnabled = false;  // keep the night -> win path clean
+
+    ScriptedDecisionProvider dp;
+    dp.nightKills = {4};       // wolf knifes the lone civilian (seat 4)
+    dp.witchSaves = {false};   // witch does not save the civilian
+    dp.witchPoisons = {1};     // witch poisons the lone wolf (seat 1)
+
+    Game game(board, dp);
+    EXPECT_EQ(game.run(), GameResult::WolfWins);
+}

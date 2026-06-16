@@ -24,6 +24,20 @@ public:
     // defers announcement to the day).
     std::vector<Player*> record(const std::vector<PendingDeath>& batch);
 
+    // Applies a same-night batch one player at a time in the night's resolution
+    // order (knife before poison — the batch's first-appearance order), checking
+    // the win after each (BRD §4.2 strict sequential: the FIRST death to complete
+    // a win condition decides it; later simultaneous deaths still apply but don't
+    // change the winner). Returns that result; `newlyOut` collects the newly-dead.
+    GameResult recordBatchSequential(const std::vector<PendingDeath>& batch,
+                                     std::vector<Player*>& newlyOut);
+
+    // Announces a death batch together in seat order, then takes last words
+    // (`lastWordsOrder`, else seat order) — §5.2 公布顺序 / §5.3 遗言. No triggers,
+    // no win check (used when the batch already decided the game, §4.2).
+    void announceBatch(const std::vector<Player*>& deaths,
+                       const std::vector<int>& lastWordsOrder = {});
+
     // Announces + transfers badge + fires triggers for already-recorded deaths,
     // chaining further deaths with a per-death win check (§4.2). Stops on a win.
     //

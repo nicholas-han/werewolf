@@ -107,13 +107,16 @@ TEST(Sheriff, ConsolidateSingleBadgeBreaksTie) {
 // ---------- Badge transfer on death (BRD §7.6) ----------
 
 TEST(Sheriff, BadgeTransferredWhenSheriffExiled) {
-    // 2 wolf + 3 civ. Civilian seat 3 is sheriff, gets exiled, hands badge to seat 4.
+    // 2 wolf + 4 civ so exiling the civilian sheriff (seat 3) does NOT end the game
+    // (2 wolves vs 3 town -> ongoing), and the badge transfer is meaningful. A later
+    // night kill (seat 5) closes it out via parity.
     ScriptedDecisionProvider dp;
-    dp.runForSheriff = {false, false, true, false, false};  // seat 3 auto-elected
-    dp.votes = {3, 3, 3, 3};            // non-sheriff voters (1,2,4,5) all exile seat 3
+    dp.runForSheriff = {false, false, true, false, false, false};  // seat 3 auto-elected
+    dp.votes = {3, 3, 3, 3, 3};         // non-sheriff voters (1,2,4,5,6) all exile seat 3
     dp.badgeTransfers = {4};            // hand the badge to seat 4
+    dp.nightKills = {std::nullopt, 5};  // n1 peaceful ; n2 -> parity WolfWins
 
-    Game game(mkBoard("transfer", {{RoleKind::Werewolf, 2}, {RoleKind::Civilian, 3}}), dp);
+    Game game(mkBoard("transfer", {{RoleKind::Werewolf, 2}, {RoleKind::Civilian, 4}}), dp);
     game.run();
     ASSERT_TRUE(game.state().sheriffId.has_value());
     EXPECT_EQ(*game.state().sheriffId, 4);
@@ -122,15 +125,33 @@ TEST(Sheriff, BadgeTransferredWhenSheriffExiled) {
 }
 
 TEST(Sheriff, BadgeDestroyedWhenSheriffDies) {
+    // Same ongoing setup; the exiled sheriff tears up the badge instead.
     ScriptedDecisionProvider dp;
-    dp.runForSheriff = {false, false, true, false, false};
-    dp.votes = {3, 3, 3, 3};
+    dp.runForSheriff = {false, false, true, false, false, false};
+    dp.votes = {3, 3, 3, 3, 3};
     dp.badgeTransfers = {std::nullopt};  // tear up the badge (撕毁)
+    dp.nightKills = {std::nullopt, 5};
 
-    Game game(mkBoard("destroy", {{RoleKind::Werewolf, 2}, {RoleKind::Civilian, 3}}), dp);
+    Game game(mkBoard("destroy", {{RoleKind::Werewolf, 2}, {RoleKind::Civilian, 4}}), dp);
     game.run();
     EXPECT_FALSE(game.state().sheriffId.has_value());
     EXPECT_TRUE(hasEvent(dp, txt::badgeDestroyed()));
+}
+
+TEST(Sheriff, NoBadgeTransferWhenDeathEndsGame) {
+    // §7.6/§4.2: if the sheriff's death itself decides the game, the (now moot)
+    // badge is NOT transferred — the moderator is never even prompted. Here exiling
+    // the civilian sheriff (seat 3) leaves 2 wolves vs 2 town -> parity WolfWins.
+    ScriptedDecisionProvider dp;
+    dp.runForSheriff = {false, false, true, false, false};
+    dp.votes = {3, 3, 3, 3};
+    dp.badgeTransfers = {4};  // provided, but must NOT be consumed
+
+    Game game(mkBoard("end-no-transfer", {{RoleKind::Werewolf, 2}, {RoleKind::Civilian, 3}}), dp);
+    EXPECT_EQ(game.run(), GameResult::WolfWins);
+    EXPECT_EQ(dp.badgeTransfers.size(), 1u);                  // transfer never asked
+    EXPECT_FALSE(hasEvent(dp, txt::badgeTransferred("P4")));  // no transfer happened
+    EXPECT_FALSE(hasEvent(dp, txt::badgeDestroyed()));
 }
 
 TEST(Sheriff, TransferHappensBeforeHunterShot) {
@@ -174,4 +195,26 @@ TEST(Sheriff, SelfDestructInterruptsElectionThenDefersToDay2) {
     EXPECT_TRUE(hasEvent(dp, txt::becomesSheriff("P3")));
     ASSERT_TRUE(game.state().sheriffId.has_value());
     EXPECT_EQ(*game.state().sheriffId, 3);
+}
+
+TEST(Sheriff, DeferredFromPkCarriesOnlyPkCandidates) {
+    // §7.5 情形 B: day 1 reaches the PK (seats 3 & 4 tie), then a THIRD party (wolf
+    // seat 1) self-destructs -> defer. Day 2 must carry ONLY the PK candidates {3,4}
+    // with NO re-registration, then vote. (runForSheriff has day-1 entries only; if
+    // the engine wrongly re-registered, the empty queue would elect nobody.)
+    ScriptedDecisionProvider dp;
+    dp.runForSheriff = {false, false, true, true, false};  // day1: seats 3 & 4 run
+    dp.selfDestructs = {std::nullopt, 1};      // day1: none initially; seat 1 blows up in the PK
+    dp.sheriffVotes = {3, 4, std::nullopt,     // day1 round1 voters [1,2,5]: tie 3 vs 4
+                       3};                      // day2: lone voter [2] -> seat 3
+    dp.withdraws = {false, false};             // day1 withdrawal window for [3,4]
+    dp.nightKills = {std::nullopt, 5};         // n1 peaceful ; n2 kill civ 5
+    dp.votes = {4, 2};                          // day2 exile: seat2->4, seat4->2
+    dp.sheriffExileBallots = {SheriffBallot{true, 2}};  // sheriff(3) 归单人 -> exile wolf 2
+
+    Game game(mkBoard("defer-pk", {{RoleKind::Werewolf, 2}, {RoleKind::Civilian, 3}}), dp);
+    EXPECT_EQ(game.run(), GameResult::TownWins);
+    EXPECT_TRUE(game.state().find(1)->hasDeathCause(DeathCause::BlownUp));
+    ASSERT_TRUE(game.state().sheriffId.has_value());
+    EXPECT_EQ(*game.state().sheriffId, 3);  // PK candidate won via the carried list
 }

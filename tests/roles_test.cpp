@@ -103,6 +103,39 @@ TEST(Witch, NeverSelfRescue) {
     EXPECT_EQ(dp.witchSaves.size(), 1u);    // not even asked
 }
 
+TEST(Witch, FirstNightOnlySelfRescue) {
+    // §2: FirstNightOnly allows self-rescue ONLY on night 1 (was wrongly behaving
+    // like Always). Witch = seat 5; she is the knifed target both nights.
+    WitchPotions witch(WitchSelfRescue::FirstNightOnly, /*bothPotionsSameNight=*/false);
+
+    // Night 1: may self-rescue.
+    {
+        GameState s = board9State();
+        s.day = 1;
+        NightContext ctx;
+        ctx.wolfTarget = 5;
+        ScriptedDecisionProvider dp;
+        dp.witchSaves = {true};
+        witch.actAtNight(ctx, s, *s.find(5), dp);
+        EXPECT_EQ(ctx.savedTarget, std::optional<int>(5));  // saved herself
+        EXPECT_FALSE(s.witchAntidoteAvailable);
+        EXPECT_EQ(dp.witchSaves.size(), 0u);  // was asked
+    }
+    // Night 2: may NOT self-rescue.
+    {
+        GameState s = board9State();
+        s.day = 2;
+        NightContext ctx;
+        ctx.wolfTarget = 5;
+        ScriptedDecisionProvider dp;
+        dp.witchSaves = {true};  // would save if asked, but she isn't
+        witch.actAtNight(ctx, s, *s.find(5), dp);
+        EXPECT_FALSE(ctx.savedTarget.has_value());  // not saved
+        EXPECT_TRUE(s.witchAntidoteAvailable);      // antidote untouched
+        EXPECT_EQ(dp.witchSaves.size(), 1u);        // not even asked
+    }
+}
+
 // ---------- Game-level integration (BRD §2/§4.2/§5.2) ----------
 
 TEST(Game, HunterShootsWhenExiled) {

@@ -195,6 +195,29 @@ TEST(HunterGunCheck, ReflectsTonightsPoison) {
     EXPECT_FALSE(dp.hunterGunChecks.back().second);
 }
 
+TEST(HunterGunCheck, MechanicWitchPoisonAlsoBlocksShot) {
+    // §2/§3: the gun-check must also see the mechanic's learned-witch poison (it now
+    // runs after the mechanic acts). hunter = seat 7 on the psychic board.
+    GameState s = psychicBoard();
+    HunterGunCheck gc;
+    ScriptedDecisionProvider dp;
+
+    NightContext mechPoison;
+    mechPoison.mechPoisonTarget = 7;  // mechanic's witch copy poisons the hunter
+    gc.actAtNight(mechPoison, s, *s.find(7), dp);
+    ASSERT_EQ(dp.hunterGunChecks.size(), 1u);
+    EXPECT_FALSE(dp.hunterGunChecks.back().second);  // will die poisoned -> cannot shoot
+
+    // Edge: a mechanic learned-guard on the hunter reflects the poison away, so he
+    // survives and can still shoot (mirrors the dawn reflect rule, §2 机械狼).
+    NightContext reflected;
+    reflected.poisonTarget = 7;
+    reflected.poisonSourceId = 6;
+    reflected.mechanicGuardTarget = 7;  // mech-guard protects the hunter -> reflected
+    gc.actAtNight(reflected, s, *s.find(7), dp);
+    EXPECT_TRUE(dp.hunterGunChecks.back().second);
+}
+
 // ---------- M9 Phase 2: learned active abilities (BRD §2) ----------
 
 TEST(MechanicLearned, HunterShotGatedThenPoisonBlocked) {
@@ -295,6 +318,34 @@ TEST(Game, MechanicBigKnifePiercesGuard) {
     EXPECT_EQ(game.run(), GameResult::WolfWins);
     // civ4 was guarded yet the 破盾大刀 still killed it.
     EXPECT_TRUE(game.state().find(4)->hasDeathCause(DeathCause::Killed));
+}
+
+TEST(Game, BigKnifeUnsaveableAndHiddenFromWitch) {
+    // §2: 破盾大刀 is a guaranteed kill — it ignores the guard AND the witch's
+    // antidote, and the witch is never told its target. seats: 1 wolf, 2 mechanic,
+    // 3 witch, 4-5 civ. After learning wolf and exiling the wolf, the lone mechanic
+    // 空刀 on its normal knife but fires the big knife at civ 5; the witch has her
+    // antidote and would save anyone she's offered — but she is never offered the
+    // big-knife target, so civ 5 dies and her antidote stays unused.
+    Board board;
+    board.name = "bigknife-unsaveable";
+    board.roster = {{RoleKind::Werewolf, 1}, {RoleKind::MechanicWolf, 1}, {RoleKind::Witch, 1},
+                    {RoleKind::Civilian, 2}};
+    board.config.winRule = WinRule::KillAll;
+    board.config.sheriffEnabled = false;
+
+    ScriptedDecisionProvider dp;
+    dp.mechanicLearns = {1};                       // n1 learn the werewolf -> gains 大刀
+    dp.nightKills = {std::nullopt, std::nullopt};   // n1 空刀 ; n2 normal lone knife 空刀
+    dp.mechanicBigKnives = {5};                    // n2 大刀 -> civ 5 (no normal target)
+    dp.witchSaves = {true};                        // she'd save if ever asked — but isn't
+    dp.votes = {2, 1, 1, 1, 1, /*day2*/ 3, 2, 2};  // d1 exile wolf(1); d2 exile mechanic(2)
+
+    Game game(board, dp);
+    EXPECT_EQ(game.run(), GameResult::TownWins);
+    EXPECT_FALSE(game.state().find(5)->isAlive());                          // big knife killed it
+    EXPECT_TRUE(game.state().find(5)->hasDeathCause(DeathCause::Killed));
+    EXPECT_TRUE(game.state().witchAntidoteAvailable);  // witch was never offered the big-knife target
 }
 
 TEST(Game, MechanicGuardReflectsPoison) {

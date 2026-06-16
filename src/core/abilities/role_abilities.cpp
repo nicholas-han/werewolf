@@ -46,12 +46,17 @@ void WitchPotions::actAtNight(NightContext& ctx, GameState& state, Player& owner
                               DecisionProvider& provider) {
     bool savedThisNight = false;
 
-    // Antidote: only offered while unused, and the witch learns the knifed
-    // player only in that case (BRD §2 死讯可见性).
+    // Antidote: only offered while unused, and only for the NORMAL knife
+    // (BRD §2 死讯可见性). The mechanic's 破盾大刀 is a guaranteed kill — it ignores
+    // the guard AND the antidote, and the witch is never told its target (§2/§5.2),
+    // so ctx.bigKnifeTarget is deliberately not surfaced here.
     if (state.witchAntidoteAvailable && ctx.wolfTarget.has_value()) {
         const int knifed = *ctx.wolfTarget;
         // Self-rescue policy (BRD §2). First board: Never.
-        const bool selfRescueAllowed = (selfRescue_ != WitchSelfRescue::Never);
+        // Never: never; FirstNightOnly: only night 1; Always: every night (§2).
+        const bool selfRescueAllowed =
+            selfRescue_ == WitchSelfRescue::Always ||
+            (selfRescue_ == WitchSelfRescue::FirstNightOnly && state.day == 1);
         if (knifed != owner.id() || selfRescueAllowed) {
             if (provider.chooseWitchSave(state, owner.id(), knifed)) {
                 ctx.savedTarget = knifed;
@@ -224,9 +229,16 @@ void MechanicLearnedShoot::onDeath(GameState& state, Player& owner, DecisionProv
 
 void HunterGunCheck::actAtNight(NightContext& ctx, GameState& /*state*/, Player& owner,
                                 DecisionProvider& provider) {
-    // Currently shootable unless the witch is poisoning this hunter tonight (§2).
-    const bool canShoot = !(ctx.poisonTarget && *ctx.poisonTarget == owner.id());
-    provider.onHunterGunCheck(owner.id(), canShoot);
+    // The hunter cannot shoot if he will die poisoned tonight — by the real witch
+    // OR the mechanic's learned witch (§2). A mechanic learned-guard on the hunter
+    // reflects the poison away (he survives -> can shoot), mirroring the dawn rule
+    // in game.cpp. This runs after all poison is set (night order 43, §3).
+    const int self = owner.id();
+    const bool guardReflects = ctx.mechanicGuardTarget && *ctx.mechanicGuardTarget == self;
+    const bool poisonedByWitch = ctx.poisonTarget && *ctx.poisonTarget == self;
+    const bool poisonedByMechWitch = ctx.mechPoisonTarget && *ctx.mechPoisonTarget == self;
+    const bool canShoot = guardReflects || !(poisonedByWitch || poisonedByMechWitch);
+    provider.onHunterGunCheck(self, canShoot);
 }
 
 void DeathTriggerShoot::onDeath(GameState& state, Player& owner, DecisionProvider& provider,
