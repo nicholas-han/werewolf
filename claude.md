@@ -67,7 +67,7 @@
   - **不获知/救不下大刀目标**：机械狼**破盾大刀**目标对女巫**不可见、也不可救**（必死，§2 机械狼 / §5.2）；大刀之夜女巫只被告知普通刀目标。
   - **死讯可见性**：只有在**解药尚未使用**时，女巫每晚才会被告知「今晚谁被狼刀」；**一旦解药已用过，之后的夜晚不再获知被刀者**。
   - 但法官（系统）仍会**完整走完询问女巫的流程**（即使她已无解药、无法得知信息），以防其他玩家通过流程节奏/时长推断出信息。
-  - **全程不可自救**（配置 `witchSelfRescue`，默认 `Never`）。
+  - **自救策略**（配置 `witchSelfRescue`，默认 `Never`＝全程不可自救）：`FirstNightOnly` 仅第一夜可自救、其余夜不可；`Always` 每晚可自救。本板为 `Never`。
 - **毒药**：毒杀一名存活玩家，当晚死亡（死因=毒杀）。毒药目标可为**任意存活玩家，包括女巫自己（自毒）**。
 - **每晚仅可使用一瓶药**（配置 `witchBothPotionsSameNight`，默认 `false`：同一晚解药、毒药只能用其一）。
 - 被女巫毒杀的玩家**不能触发猎人开枪**（见猎人）。
@@ -149,7 +149,7 @@
 | --------------------------- | ------------------- | ------------------------------------------------------ |
 | `sheriffEnabled`            | `true`              | 是否启用警长竞选                                               |
 | `winRule`                   | `屠边 (KillSide)`     | 胜负规则，见 §4                                              |
-| `witchSelfRescue`           | `Never`             | 女巫自救：`Never` / `FirstNightOnly` / `Always`（本板 `Never`） |
+| `witchSelfRescue`           | `Never`             | 女巫自救：`Never`=全程不可 / `FirstNightOnly`=**仅第一夜**可 / `Always`=每晚可（本板 `Never`） |
 | `witchBothPotionsSameNight` | `false`             | 同一晚能否解药+毒药并用（本板每晚仅一瓶）                                  |
 | `blownUpEnabled`             | `true`              | 狼人白天能否自爆                                               |
 | `abstainAllowed`            | `true`              | 放逐投票能否弃票                                               |
@@ -396,7 +396,7 @@ werewolf/
 │   ├── io/            # decision_provider.h, scripted_/console_/pass_and_play_decision_provider.*,
 │   │                  #   player_channel.h（每玩家通道）, routing_decision_provider.*（按玩家路由）, scripted_/bot_channel.*
 │   └── app/           # main.cpp（命令行入口：发牌方式 + 主持整局 / bot 自动对战）
-└── tests/             # …/pass_and_play/speech_log/routing/rules_m13_test.cpp（GoogleTest，107 用例）
+└── tests/             # …/pass_and_play/speech_log/routing/rules_m13_test.cpp（GoogleTest，108 用例）
 ```
 
 ## 13. 技术栈与约定

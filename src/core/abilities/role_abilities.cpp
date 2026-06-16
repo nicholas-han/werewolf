@@ -53,7 +53,10 @@ void WitchPotions::actAtNight(NightContext& ctx, GameState& state, Player& owner
     if (state.witchAntidoteAvailable && ctx.wolfTarget.has_value()) {
         const int knifed = *ctx.wolfTarget;
         // Self-rescue policy (BRD §2). First board: Never.
-        const bool selfRescueAllowed = (selfRescue_ != WitchSelfRescue::Never);
+        // Never: never; FirstNightOnly: only night 1; Always: every night (§2).
+        const bool selfRescueAllowed =
+            selfRescue_ == WitchSelfRescue::Always ||
+            (selfRescue_ == WitchSelfRescue::FirstNightOnly && state.day == 1);
         if (knifed != owner.id() || selfRescueAllowed) {
             if (provider.chooseWitchSave(state, owner.id(), knifed)) {
                 ctx.savedTarget = knifed;
