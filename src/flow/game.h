@@ -73,8 +73,11 @@ private:
     // Announces the pending night deaths and resolves their triggers (§5.3/§2).
     GameResult announceNightDeaths();
     // Announces one night-death batch: header + "顺序不分先后" (§5.2) + settlement,
-    // with a random last-words order for first-night multi-death (§5.2/§5.3).
-    GameResult announceNightBatch(std::vector<Player*> dead);
+    // with a random last-words order for first-night multi-death (§5.2/§5.3). When
+    // `decided` != Ongoing the batch already settled the game (§4.2): announce +
+    // last words only, no triggers; return that pre-decided result.
+    GameResult announceNightBatch(std::vector<Player*> dead,
+                                  GameResult decided = GameResult::Ongoing);
 
     // Exile vote with the sheriff's 归票 weighting (BRD §6/§7.1).
     std::optional<int> resolveExile();

@@ -100,7 +100,7 @@ std::vector<int> Game::aliveWolfIds() const {
     return ids;
 }
 
-GameResult Game::announceNightBatch(std::vector<Player*> dead) {
+GameResult Game::announceNightBatch(std::vector<Player*> dead, GameResult decided) {
     provider_.notify(txt::announceHeader());
     if (dead.size() > 1) provider_.notify(txt::deathOrderDisclaimer());  // §5.2 公布顺序
 
@@ -111,6 +111,13 @@ GameResult Game::announceNightBatch(std::vector<Player*> dead) {
         for (Player* p : dead) lwOrder.push_back(p->id());
         std::mt19937 rng(static_cast<unsigned>(nowTicks()));
         std::shuffle(lwOrder.begin(), lwOrder.end(), rng);
+    }
+
+    if (decided != GameResult::Ongoing) {
+        // §4.2: the batch already settled the game — announce + last words, but no
+        // death triggers fire (e.g. a knifed hunter never gets to shoot).
+        settlement_.announceBatch(dead, lwOrder);
+        return decided;
     }
     std::deque<Player*> q(dead.begin(), dead.end());
     return settlement_.resolveRecorded(std::move(q), lwOrder);
@@ -291,13 +298,17 @@ GameResult Game::runNight() {
     applyPoison(ctx.poisonTarget, ctx.poisonSourceId);
     applyPoison(ctx.mechPoisonTarget, ctx.mechPoisonSourceId);
 
-    std::vector<Player*> newly = settlement_.record(batch);
+    // Apply the direct night deaths one at a time, in the night's resolution order
+    // (knife before poison), checking the win after each (§4.2 strict sequential —
+    // the FIRST death to complete a condition decides it, no good-priority).
+    std::vector<Player*> newly;
+    const GameResult decided = settlement_.recordBatchSequential(batch, newly);
 
-    // Win check on the direct night deaths (§4.2). If decided, the game ends now:
-    // announce them (resolveRecorded returns at the win check before any triggers,
-    // so e.g. a knifed last-townsfolk ends it and the hunter never shoots).
-    if (evaluateWin(state_, board_.config) != GameResult::Ongoing) {
-        return announceNightBatch(newly);
+    // If the batch already decided the game, end it now (announce the deaths but
+    // fire no triggers — e.g. a knifed last-townsfolk wins it and the hunter never
+    // shoots, §4.2).
+    if (decided != GameResult::Ongoing) {
+        return announceNightBatch(newly, decided);
     }
 
     // Otherwise defer announcement + triggers to the day (§7.2 / §2).
