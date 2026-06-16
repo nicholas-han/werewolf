@@ -130,6 +130,27 @@ TEST(JsonProtocol, InspectResultIsPrivateToSeer) {
     EXPECT_NE(o.find("\"isWolf\":true"), std::string::npos);
 }
 
+TEST(JsonProtocol, WolfChatIsPrivateToWolvesNeverPublic) {
+    std::istringstream in("{\"t\":\"reply\",\"text\":\"今晚刀3号\"}\n");
+    std::ostringstream out;
+    GameState s = board9State();
+    std::vector<int> openWolves;
+    for (const Player& pl : s.players) {
+        if (pl.faction() == Faction::Wolf && pl.role().kind() != RoleKind::MechanicWolf) {
+            openWolves.push_back(pl.id());
+        }
+    }
+    ASSERT_GE(openWolves.size(), 2u);
+    JsonDecisionProvider p(in, out, "B", 1);
+    EXPECT_EQ(p.collectWolfChat(s, openWolves[0], openWolves), "今晚刀3号");
+    const std::string o = out.str();
+    EXPECT_EQ(o.find("\"vis\":\"public\""), std::string::npos);  // never leaks publicly
+    EXPECT_NE(o.find("\"kind\":\"WolfChat\""), std::string::npos);
+    EXPECT_NE(o.find("\"etype\":\"speech\""), std::string::npos);
+    // a private speech addressed to a teammate wolf
+    EXPECT_NE(o.find("\"seat\":" + std::to_string(openWolves[1])), std::string::npos);
+}
+
 // --- full game over the protocol (EOF = every decision falls back legally) ---
 
 TEST(JsonProtocol, EofGameRunsToCompletionAndEmitsFrames) {

@@ -53,6 +53,10 @@ private:
     GameResult runNight();
     GameResult runDay();
 
+    // §5.4: open wolves chat before the knife each night (no mechanical effect;
+    // relayed only to wolves). No-op for providers that don't run a wolf chat.
+    void runWolfChat();
+
     // Result of the sheriff election attempt.
     struct ElectionOutcome {
         GameResult result = GameResult::Ongoing;

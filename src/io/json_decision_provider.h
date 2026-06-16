@@ -51,6 +51,7 @@ public:
     std::optional<int> chooseBadgeTransfer(const GameState&, int, const std::vector<int>&) override;
     SpeechDirection chooseSpeechDirection(const GameState&, int, int, bool) override;
     std::string collectSpeech(const GameState&, int, SpeechKind, int) override;
+    std::string collectWolfChat(const GameState&, int, const std::vector<int>&) override;
 
     void onInspectResult(int seerId, int targetId, bool isWolf) override;
     void onPsychicResult(int psychicId, int targetId, RoleKind shownRole) override;

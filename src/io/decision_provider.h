@@ -170,6 +170,15 @@ public:
         (void)state; (void)speakerId; (void)kind; (void)day; return "";
     }
 
+    // Wolf-team night chat (BRD §5.4, AI agents): collect `speakerId`'s private
+    // chat; the provider relays it to the other open wolves (`openWolfIds`). No
+    // mechanical effect (like daytime speech). Default no-op so non-AI providers
+    // run no wolf chat at all (zero behaviour change).
+    virtual std::string collectWolfChat(const GameState& state, int speakerId,
+                                        const std::vector<int>& openWolfIds) {
+        (void)state; (void)speakerId; (void)openWolfIds; return "";
+    }
+
     // Pacing hook for a human moderator (BRD M5 ⑤): block until the operator is
     // ready to continue. No-op for scripted/bot providers.
     virtual void pause(const std::string& note) { (void)note; }

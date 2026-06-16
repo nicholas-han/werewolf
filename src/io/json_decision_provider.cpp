@@ -39,6 +39,7 @@ const char* speechKindName(SpeechKind k) {
     switch (k) {
         case SpeechKind::Statement: return "Statement";
         case SpeechKind::LastWords: return "LastWords";
+        case SpeechKind::WolfChat: return "WolfChat";
     }
     return "Statement";
 }
@@ -424,6 +425,31 @@ std::string JsonDecisionProvider::collectSpeech(const GameState& s, int speakerI
         e.phase = curPhase_;
         e.text = nameOf(s, speakerId) + "：" + text;
         sink_.emit(e);
+    }
+    return text;
+}
+
+std::string JsonDecisionProvider::collectWolfChat(const GameState& s, int speakerId,
+                                                  const std::vector<int>& openWolfIds) {
+    sync(s);
+    std::string text = askSpeak(s, speakerId, SpeechKind::WolfChat, "狼队私聊，请发言");
+    if (!text.empty()) {
+        jsonu::Obj d;
+        d.num("speaker", speakerId).str("kind", "WolfChat");
+        const std::string disp = nameOf(s, speakerId) + "（狼队）：" + text;
+        // Private to each open wolf (incl. the speaker, so every wolf's view holds it);
+        // never public. The orchestrator can dedupe identical lines for the god-script.
+        for (int w : openWolfIds) {
+            Event e;
+            e.vis = Vis::Private;
+            e.seat = w;
+            e.etype = "speech";
+            e.dataJson = d.dump();
+            e.day = curDay_;
+            e.phase = curPhase_;
+            e.text = disp;
+            sink_.emit(e);
+        }
     }
     return text;
 }

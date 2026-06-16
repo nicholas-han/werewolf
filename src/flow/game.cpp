@@ -224,6 +224,25 @@ void Game::collectDaySpeeches(const std::vector<int>& orderSeats) {
     }
 }
 
+void Game::runWolfChat() {
+    // §5.4: collect each open wolf's night chat (mechanic doesn't meet the pack).
+    // The provider relays it privately to the other wolves; non-AI providers no-op.
+    std::vector<int> open;
+    for (const Player& p : state_.players) {
+        if (p.isAlive() && p.faction() == Faction::Wolf &&
+            p.role().kind() != RoleKind::MechanicWolf) {
+            open.push_back(p.id());
+        }
+    }
+    if (open.empty()) return;
+    for (int w : open) {
+        const Player* wp = state_.find(w);
+        std::string text = provider_.collectWolfChat(state_, w, open);
+        state_.recordSpeech(state_.day, SpeechKind::WolfChat, w, wp ? wp->seat() : 0,
+                            std::move(text));  // empty text is ignored by recordSpeech
+    }
+}
+
 GameResult Game::runNight() {
     provider_.notify(txt::nightBanner(state_.day));
 
@@ -231,6 +250,8 @@ GameResult Game::runNight() {
         p.guardedTonight = false;
         p.poisonedTonight = false;
     }
+
+    runWolfChat();  // §5.4: wolves coordinate before the knife (no mechanical effect)
 
     struct Act {
         Player* owner;
@@ -486,7 +507,14 @@ Game::ElectionOutcome Game::runSheriffElection() {
         return {GameResult::Ongoing, false};
     }
 
-    // (Candidate speeches are cosmetic and skipped.)
+    // Candidate speeches (BRD §7.2-2): each candidate pitches in registration order.
+    // Recorded as day statements; no-op for providers that don't collect speech.
+    for (int cid : candidates) {
+        const Player* cp = state_.find(cid);
+        if (cp == nullptr) continue;
+        std::string pitch = provider_.collectSpeech(state_, cid, SpeechKind::Statement, state_.day);
+        state_.recordSpeech(state_.day, SpeechKind::Statement, cid, cp->seat(), std::move(pitch));
+    }
 
     // Withdraw / self-destruct window (§7.2-4). A wolf self-destruct interrupts
     // the election (§7.4); on day 2 a second interruption kills the badge (§7.5).
