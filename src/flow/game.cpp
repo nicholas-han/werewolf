@@ -5,6 +5,7 @@
 #include <cmath>
 #include <deque>
 #include <map>
+#include <random>
 #include <string>
 #include <utility>
 
@@ -99,18 +100,33 @@ std::vector<int> Game::aliveWolfIds() const {
     return ids;
 }
 
+GameResult Game::announceNightBatch(std::vector<Player*> dead) {
+    provider_.notify(txt::announceHeader());
+    if (dead.size() > 1) provider_.notify(txt::deathOrderDisclaimer());  // §5.2 公布顺序
+
+    // First-night multi-death: randomize the last-words order (§5.2/§5.3). Other
+    // nights: night deaths have no last words, so order is moot -> seat order.
+    std::vector<int> lwOrder;
+    if (state_.day == 1 && dead.size() > 1) {
+        for (Player* p : dead) lwOrder.push_back(p->id());
+        std::mt19937 rng(static_cast<unsigned>(nowTicks()));
+        std::shuffle(lwOrder.begin(), lwOrder.end(), rng);
+    }
+    std::deque<Player*> q(dead.begin(), dead.end());
+    return settlement_.resolveRecorded(std::move(q), lwOrder);
+}
+
 GameResult Game::announceNightDeaths() {
     if (pendingNightDeaths_.empty()) {
         provider_.notify(txt::peacefulNight());  // peaceful night cue
         return GameResult::Ongoing;
     }
-    provider_.notify(txt::announceHeader());
-    std::deque<Player*> worklist;
+    std::vector<Player*> dead;
     for (int id : pendingNightDeaths_) {
-        if (Player* p = state_.find(id)) worklist.push_back(p);
+        if (Player* p = state_.find(id)) dead.push_back(p);
     }
     pendingNightDeaths_.clear();
-    return settlement_.resolveRecorded(std::move(worklist));
+    return announceNightBatch(std::move(dead));
 }
 
 std::string Game::moderatorStatus() const {
@@ -281,8 +297,7 @@ GameResult Game::runNight() {
     // announce them (resolveRecorded returns at the win check before any triggers,
     // so e.g. a knifed last-townsfolk ends it and the hunter never shoots).
     if (evaluateWin(state_, board_.config) != GameResult::Ongoing) {
-        provider_.notify(txt::announceHeader());
-        return settlement_.resolveRecorded(std::deque<Player*>(newly.begin(), newly.end()));
+        return announceNightBatch(newly);
     }
 
     // Otherwise defer announcement + triggers to the day (§7.2 / §2).
@@ -297,6 +312,64 @@ void Game::electSheriff(int playerId) {
         p->isSheriff = true;
         provider_.notify(txt::becomesSheriff(p->name()));
     }
+}
+
+std::vector<int> Game::selfDestructWolfCandidates() const {
+    std::vector<int> ids = aliveWolfIds();
+    // §2 自爆吞毒: a wolf that died at night but whose death isn't announced yet
+    // (only during the day-1 pre-announcement election window) can still自爆.
+    for (int id : pendingNightDeaths_) {
+        const Player* p = state_.find(id);
+        if (p && p->faction() == Faction::Wolf) ids.push_back(id);
+    }
+    return ids;
+}
+
+GameResult Game::announceThenSelfDestruct(int sd) {
+    // §7.4-1 + §2 自爆吞毒: if `sd` is a not-yet-announced night death, stamp
+    // BlownUp over its night cause and let the night batch announce it (as 自爆,
+    // poison hidden). Otherwise announce the night deaths, then blow up the
+    // (still-living) wolf separately.
+    const bool swallow = contains(pendingNightDeaths_, sd);
+    if (swallow) {
+        if (Player* p = state_.find(sd)) {
+            p->recordDeath(DeathCause::BlownUp, state_.day, Phase::Day);  // appends cause
+        }
+    }
+    if (GameResult r = announceNightDeaths(); r != GameResult::Ongoing) return r;
+    if (swallow) return GameResult::Ongoing;  // already announced + settled in the batch
+    return settlement_.apply({{sd, DeathCause::BlownUp}});
+}
+
+Game::ElectionOutcome Game::resolveElectionSelfDestruct(int sd, const std::vector<int>& pkLeaders,
+                                                        bool wasDeferred) {
+    std::vector<int> pkLeft;
+    for (int id : pkLeaders) {
+        if (id != sd) pkLeft.push_back(id);
+    }
+    // §7.4 警徽落地归另一人: a PK candidate blowing up leaves exactly one -> auto-win.
+    const bool pkCollapseElect = contains(pkLeaders, sd) && pkLeft.size() == 1;
+
+    if (pkCollapseElect) {  // a sheriff IS produced; election resolved
+        electionResolved_ = true;
+        electionDeferred_ = false;
+    } else if (wasDeferred) {  // 2nd interruption (day 2) -> badge gone forever (§7.5)
+        badgeAbandoned_ = true;
+        electionResolved_ = true;
+        electionDeferred_ = false;
+    } else {  // 1st interruption (day 1) -> defer the election to day 2 (§7.4)
+        electionResolved_ = false;
+        electionDeferred_ = true;
+    }
+
+    GameResult r = announceThenSelfDestruct(sd);
+    if (r != GameResult::Ongoing) return {r, false};
+
+    if (pkCollapseElect) {
+        provider_.notify(txt::autoSheriff(nameOrId(state_, pkLeft.front())));
+        electSheriff(pkLeft.front());
+    }
+    return {GameResult::Ongoing, true};  // self-destruct ends the day -> night
 }
 
 Game::ElectionOutcome Game::runSheriffElection() {
@@ -328,22 +401,12 @@ Game::ElectionOutcome Game::runSheriffElection() {
 
     // Withdraw / self-destruct window (§7.2-4). A wolf self-destruct interrupts
     // the election (§7.4); on day 2 a second interruption kills the badge (§7.5).
+    // 吞毒-eligible: pending (un-announced) night-dead wolves may also自爆 (§2).
     {
-        const std::vector<int> wolves = aliveWolfIds();
+        const std::vector<int> wolves = selfDestructWolfCandidates();
         if (!wolves.empty()) {
             if (std::optional<int> sd = provider_.chooseSelfDestruct(state_, wolves)) {
-                if (deferred) {
-                    badgeAbandoned_ = true;
-                    electionResolved_ = true;
-                } else {
-                    electionDeferred_ = true;
-                }
-                // §7.4: announce last night's deaths first, then resolve the blast.
-                if (GameResult r = announceNightDeaths(); r != GameResult::Ongoing) {
-                    return {r, false};
-                }
-                GameResult r = settlement_.apply({{*sd, DeathCause::BlownUp}});
-                return {r, r == GameResult::Ongoing};
+                return resolveElectionSelfDestruct(*sd, /*pkLeaders=*/{}, deferred);
             }
         }
     }
@@ -392,8 +455,39 @@ Game::ElectionOutcome Game::runSheriffElection() {
         return {GameResult::Ongoing, false};
     }
 
-    // Runoff (§7.3): everyone except the tied candidates re-votes among them.
+    // Runoff (§7.3): the tied candidates PK.
     provider_.notify(txt::sheriffRunoffTie(joinNames(state_, leaders)));
+
+    // PK-台 self-destruct (§7.4): a PK candidate blowing up hands the badge to the
+    // sole survivor; a third person (incl. 吞毒) interrupts as usual.
+    {
+        const std::vector<int> wolves = selfDestructWolfCandidates();
+        if (!wolves.empty()) {
+            if (std::optional<int> sd = provider_.chooseSelfDestruct(state_, wolves)) {
+                return resolveElectionSelfDestruct(*sd, leaders, deferred);
+            }
+        }
+    }
+
+    // PK-台 退水 (§7.3): withdraw any time; reducing to one auto-elects it.
+    {
+        std::vector<int> pk;
+        for (int id : leaders) {
+            if (!provider_.chooseWithdraw(state_, id)) pk.push_back(id);
+        }
+        if (pk.size() == 1) {
+            provider_.notify(txt::autoSheriff(nameOrId(state_, pk.front())));
+            electSheriff(pk.front());
+            return {GameResult::Ongoing, false};
+        }
+        if (pk.empty()) {  // all PK candidates withdrew -> badge lost
+            provider_.notify(txt::badgeLostTie());
+            return {GameResult::Ongoing, false};
+        }
+        leaders = pk;
+    }
+
+    // Runoff vote: everyone except the (remaining) PK candidates re-votes.
     std::vector<int> runoffVoters;
     for (int id : alive) {
         if (!contains(leaders, id)) runoffVoters.push_back(id);

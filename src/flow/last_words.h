@@ -12,14 +12,13 @@ namespace ww {
 
 inline bool hasLastWords(Phase deathPhase, int deathDay,
                          const std::vector<DeathCause>& causes) {
-    if (deathPhase == Phase::Day) {
-        // Daytime death (exile, daytime hunter shot, ...) -> last words, unless
-        // it was a wolf self-destruct (自爆无遗言).
-        for (DeathCause c : causes) {
-            if (c == DeathCause::BlownUp) return false;
-        }
-        return true;
+    // 自爆无遗言 — universal, regardless of phase. This also covers 自爆吞毒 (§2),
+    // where the BlownUp cause is stamped over a night poison death.
+    for (DeathCause c : causes) {
+        if (c == DeathCause::BlownUp) return false;
     }
+    // Daytime death (exile, daytime hunter shot, ...) -> last words.
+    if (deathPhase == Phase::Day) return true;
     // Night death: only the first night grants last words.
     return deathDay == 1;
 }

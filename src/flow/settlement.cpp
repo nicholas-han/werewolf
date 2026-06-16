@@ -14,12 +14,27 @@ Settlement::Settlement(GameState& state, const BoardConfig& config, DecisionProv
     : state_(state), config_(config), provider_(provider) {}
 
 void Settlement::announceDeath(const Player& p) {
+    // A self-destruct is announced as 自爆 only — any swallowed night cause stays
+    // hidden (§2 自爆吞毒: the witch's poison is concealed by the blast).
+    if (p.hasDeathCause(DeathCause::BlownUp)) {
+        provider_.notify(txt::out(p.name(), txt::cause(DeathCause::BlownUp)));
+        return;
+    }
     std::string causes;
     for (DeathCause c : p.deathCauses()) {
         if (!causes.empty()) causes += "+";
         causes += txt::cause(c);
     }
     provider_.notify(txt::out(p.name(), causes));
+}
+
+void Settlement::collectLastWords(Player& dead) {
+    if (!hasLastWords(dead)) return;  // §5.3 eligibility
+    provider_.notify(txt::lastWordsCue(dead.name()));
+    std::string lw =  // §4 发言记录: capture 遗言 for replay
+        provider_.collectSpeech(state_, dead.id(), SpeechKind::LastWords, state_.day);
+    state_.recordSpeech(state_.day, SpeechKind::LastWords, dead.id(), dead.seat(), std::move(lw));
+    provider_.pause(txt::lastWordsPause(dead.name()));
 }
 
 void Settlement::maybeTransferBadge(Player& dead) {
@@ -56,23 +71,35 @@ std::vector<Player*> Settlement::record(const std::vector<PendingDeath>& batch) 
     return newly;
 }
 
-GameResult Settlement::resolveRecorded(std::deque<Player*> worklist) {
-    std::sort(worklist.begin(), worklist.end(),
-              [](const Player* a, const Player* b) { return a->seat() < b->seat(); });
+GameResult Settlement::resolveRecorded(std::deque<Player*> worklist,
+                                      const std::vector<int>& lastWordsOrder) {
+    auto bySeat = [](const Player* a, const Player* b) { return a->seat() < b->seat(); };
 
-    while (!worklist.empty()) {
-        Player* dead = worklist.front();
-        worklist.pop_front();
+    // The simultaneous batch. Announce all of it together in seat order, so the
+    // public never sees a settlement order (§5.2 公布顺序).
+    std::vector<Player*> batch(worklist.begin(), worklist.end());
+    std::sort(batch.begin(), batch.end(), bySeat);
+    for (Player* d : batch) announceDeath(*d);
 
-        announceDeath(*dead);
-        if (hasLastWords(*dead)) {  // §5.3 last-words cue + pacing
-            provider_.notify(txt::lastWordsCue(dead->name()));
-            std::string lw =  // §4 发言记录: capture 遗言 for replay
-                provider_.collectSpeech(state_, dead->id(), SpeechKind::LastWords, state_.day);
-            state_.recordSpeech(state_.day, SpeechKind::LastWords, dead->id(), dead->seat(),
-                                std::move(lw));
-            provider_.pause(txt::lastWordsPause(dead->name()));
+    // Last words for the batch, in the requested order (random for first-night
+    // multi-death, §5.2/§5.3); empty -> seat order.
+    std::vector<Player*> lwOrder;
+    if (lastWordsOrder.empty()) {
+        lwOrder = batch;
+    } else {
+        for (int id : lastWordsOrder) {
+            if (Player* p = state_.find(id)) lwOrder.push_back(p);
         }
+    }
+    for (Player* d : lwOrder) collectLastWords(*d);
+
+    // Badge transfer + win check + death triggers (seat order), chaining further
+    // deaths — each chained death announces + takes last words as it occurs.
+    std::deque<Player*> q(batch.begin(), batch.end());
+    while (!q.empty()) {
+        Player* dead = q.front();
+        q.pop_front();
+
         maybeTransferBadge(*dead);  // §7.6: transfer before death-triggered skills
 
         if (GameResult r = evaluateWin(state_, config_); r != GameResult::Ongoing) {
@@ -89,7 +116,11 @@ GameResult Settlement::resolveRecorded(std::deque<Player*> worklist) {
                 if (t == nullptr) continue;
                 const bool wasAlive = t->isAlive();
                 t->recordDeath(td.cause, state_.day, state_.phase);
-                if (wasAlive) worklist.push_back(t);
+                if (wasAlive) {
+                    announceDeath(*t);
+                    collectLastWords(*t);
+                    q.push_back(t);
+                }
             }
         }
     }

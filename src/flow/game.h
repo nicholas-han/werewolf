@@ -57,8 +57,24 @@ private:
     };
     ElectionOutcome runSheriffElection();
 
+    // Wolves eligible to self-destruct during the election: alive wolves plus any
+    // wolf that died at night but isn't announced yet (§2 自爆吞毒).
+    std::vector<int> selfDestructWolfCandidates() const;
+    // §7.4-1 + §2: announce night deaths first (a not-yet-announced 自爆者 swallows
+    // its night cause), then blow up `sd`. Returns the resulting game result.
+    GameResult announceThenSelfDestruct(int sd);
+    // Handles a self-destruct during the election (§7.4). `pkLeaders` = current
+    // runoff candidates (empty outside the runoff); `wasDeferred` = this is the
+    // day-2 deferred election. Sets defer/abandon flags, may elect the surviving
+    // PK candidate, and reports interrupted=true (day ends -> night).
+    ElectionOutcome resolveElectionSelfDestruct(int sd, const std::vector<int>& pkLeaders,
+                                                bool wasDeferred);
+
     // Announces the pending night deaths and resolves their triggers (§5.3/§2).
     GameResult announceNightDeaths();
+    // Announces one night-death batch: header + "顺序不分先后" (§5.2) + settlement,
+    // with a random last-words order for first-night multi-death (§5.2/§5.3).
+    GameResult announceNightBatch(std::vector<Player*> dead);
 
     // Exile vote with the sheriff's 归票 weighting (BRD §6/§7.1).
     std::optional<int> resolveExile();

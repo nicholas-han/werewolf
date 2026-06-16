@@ -26,7 +26,14 @@ public:
 
     // Announces + transfers badge + fires triggers for already-recorded deaths,
     // chaining further deaths with a per-death win check (§4.2). Stops on a win.
-    GameResult resolveRecorded(std::deque<Player*> worklist);
+    //
+    // The simultaneous batch is announced together in seat order first, then last
+    // words are taken (§5.2 公布顺序). `lastWordsOrder` (player ids) overrides the
+    // batch's last-words order — used for the first-night multi-death random order
+    // (§5.2/§5.3); empty = seat order. Chained (triggered) deaths announce + take
+    // last words as they occur.
+    GameResult resolveRecorded(std::deque<Player*> worklist,
+                               const std::vector<int>& lastWordsOrder = {});
 
     // record() + resolveRecorded(): the all-in-one for same-moment deaths
     // (exile, self-destruct, sandbox 拍刀 steps).
@@ -38,6 +45,7 @@ private:
     DecisionProvider& provider_;
 
     void announceDeath(const Player& p);
+    void collectLastWords(Player& dead);  // cue + capture text + pause, if eligible
     void maybeTransferBadge(Player& dead);
 };
 

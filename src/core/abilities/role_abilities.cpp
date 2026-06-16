@@ -70,8 +70,8 @@ void WitchPotions::actAtNight(NightContext& ctx, GameState& state, Player& owner
     // in one night (BRD §2, witchBothPotionsSameNight=false on first board).
     const bool poisonBlocked = savedThisNight && !bothPotionsSameNight_;
     if (state.witchPoisonAvailable && !poisonBlocked) {
-        std::optional<int> target =
-            provider.chooseWitchPoison(state, owner.id(), aliveIds(state, owner.id()));
+        // Poison may target anyone alive, INCLUDING the witch herself (自毒, §2).
+        std::optional<int> target = provider.chooseWitchPoison(state, owner.id(), aliveIds(state));
         if (target) {
             ctx.poisonTarget = *target;
             ctx.poisonSourceId = owner.id();
@@ -182,8 +182,9 @@ void MechanicLearnedWitch::actAtNight(NightContext& ctx, GameState& state, Playe
     }
     const bool poisonBlocked = saved && !bothPotionsSameNight_;
     if (state.mechanicPoisonAvailable && !poisonBlocked) {
+        // Learned-witch poison may also target anyone alive, incl. self (§2 自毒).
         if (std::optional<int> target =
-                provider.chooseWitchPoison(state, owner.id(), aliveIds(state, owner.id()))) {
+                provider.chooseWitchPoison(state, owner.id(), aliveIds(state))) {
             ctx.mechPoisonTarget = *target;
             ctx.mechPoisonSourceId = owner.id();
             state.mechanicPoisonAvailable = false;
