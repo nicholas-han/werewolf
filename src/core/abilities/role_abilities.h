@@ -95,7 +95,11 @@ public:
 class MechanicLoneKill : public Ability, public NightActor {
 public:
     std::string name() const override { return "MechanicLoneKill"; }
-    int nightOrder() const override { return 40; }
+    // §3/§5.1: the mechanic "confirms its knife" right AFTER the wolves and
+    // BEFORE the witch, so a lone/big-knife kill resolves before the witch wakes
+    // and she can correctly learn (and save) tonight's knifed target. The
+    // mechanic's other actions (learn / learned abilities) stay at order 38+.
+    int nightOrder() const override { return 11; }
     std::string nightCue() const override { return "机械狼"; }
     void actAtNight(NightContext& ctx, GameState& state, Player& owner,
                     DecisionProvider& provider) override;

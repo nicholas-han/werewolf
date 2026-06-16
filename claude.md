@@ -384,7 +384,7 @@ werewolf/
 │   ├── io/            # decision_provider.h, scripted_/console_/pass_and_play_decision_provider.*,
 │   │                  #   player_channel.h（每玩家通道）, routing_decision_provider.*（按玩家路由）, scripted_/bot_channel.*
 │   └── app/           # main.cpp（命令行入口：发牌方式 + 主持整局 / bot 自动对战）
-└── tests/             # …/psychic_mechanic/pass_and_play/speech_log/routing_test.cpp（GoogleTest，96 用例）
+└── tests/             # …/pass_and_play/speech_log/routing/rules_m13_test.cpp（GoogleTest，103 用例）
 ```
 
 ## 13. 技术栈与约定
@@ -423,7 +423,8 @@ werewolf/
   11. ✅ **M10** 传递游玩（单设备多人）：`PassAndPlayDecisionProvider` 用「清屏 + 私密交接」在一台设备上实现每人只看自己信息（§11），程序自动当裁判；开局私密发牌（狼队互见、机械狼不见队友）。无需网络。
   12. ✅ **M11** 发言记录与复盘（路线图第 4 项）：`DecisionProvider::collectSpeech` 按发言顺序收每人白天发言 + 出局者遗言，存入 `GameState.speeches`（真相层历史、不进 snapshot——拍刀沙盒只推演死亡）；`flow/transcript.h` 的 `formatTranscript` 按天分组复盘。控制台/传递游玩用 `setRecordSpeech` 开关（默认关，开局菜单可选）；语音转写仅是同一字符串的另一输入源（接口已留，未实装）。
   13. ✅ **M12** 多人地基：按玩家路由（路线图第 3 项「多人」的引擎层 + 第 5 项 AI 的运行基座）。`PlayerChannel`（每玩家一条通道：`chooseAmong/confirm/speak/tell` + `AskKind`）+ `RoutingDecisionProvider`（实现现有 `DecisionProvider`，把每次调用按 id 分发；公共广播、私密 `notifyPlayer` 定向、法官全知 `notifyModerator` 只给观战）。狼队「统一刀」由最小座号存活狼**代表拍板**、其余开睁眼狼私下获知。新增 `notifyPlayer`/`notifyModerator` 两个定向接口（默认回退 `notify`，单屏行为不变），并**修复两处广播泄露**：女巫「你今晚被刀」改定向、身份状态栏改 `notifyModerator`（同时修掉 M10 传递游玩公开身份表的泄露）。`ScriptedChannel`（测试）/`BotChannel`（合法走子，进程内多座位无真人也能跑完整局）；`app` 加「AI 自动对战」玩法。**引擎纯逻辑不变。**
-- **当前状态**：M0–M11 已合入 `main`；M12 在 `m12-multiplayer-channels` 分支；GoogleTest 共 **96** 个用例全绿；`./build/werewolf` 可选 3 个板 + 单屏法官 / 传递游玩 / AI 自动对战 三种玩法 + 可选发言记录复盘。
+  14. ✅ **M13** 规则细化（试玩反馈）：①女巫可**自毒**（毒药候选含自己，机械女巫同）；②狼人**自刀**（既有）；③**自爆吞毒**——竞选阶段「夜死未公布」的狼仍可自爆，死因叠加（自爆+毒），announceDeath 对自爆只报「自爆」隐藏吞掉的死因，hasLastWords 对自爆统一返回 false；④**PK 台自爆**——PK 候选自爆→另一人当选、第三人自爆→中断顺延；⑤**退水到一人即当选**扩展到决胜轮；⑥首夜多死**遗言顺序随机**；⑦公布死讯加「死亡顺序不分先后」并按座位升序；⑧机械狼板**刀人拆到狼人之后、女巫之前**（`MechanicLoneKill` 夜序 40→11），其余机械狼行动仍在原位——修复「女巫无法解救机械狼独立刀」的次序 bug。`Settlement::resolveRecorded` 重构为「先全体公布→再遗言（可定制顺序）→后触发连锁」。
+- **当前状态**：M0–M12 已合入 `main`；M13 在 `m13-rule-refinements` 分支；GoogleTest 共 **103** 个用例全绿；`./build/werewolf` 可选 3 个板 + 单屏法官 / 传递游玩 / AI 自动对战 三种玩法 + 可选发言记录复盘。
 - **尚未实现（已在规则中定义，待后续）**：拍刀阶段 C 自动最优搜索（§4.4）；**真·联机**（多设备/网络传输）——按玩家路由的引擎层已由 M12 落地，只差网络传输（一个 `NetworkChannel`）与真人多终端/浏览器客户端；AI agent 玩家（一个 `AgentChannel`，复用 M12 的 `PlayerChannel`）。
 - **后续待定义（用户提供）**：更多板子（12 人预女猎白、丘比特/骑士等）、屠城板、遗言细则、平票变体。
 
