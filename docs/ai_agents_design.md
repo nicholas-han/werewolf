@@ -16,7 +16,7 @@
 | 流程增量            | 加狼队夜间私聊（无机制影响）                                           | 协作更真实、训练数据更丰富                                                     |
 | Orchestrator 语言 | Python（建议）                                               | 本地模型客户端、Whisper/TTS 语音、各家 LLM SDK 生态最成熟                           |
 
-**已定运行参数（M15，详见对应小节）**：本地模型 **deepseek-r1:32b**（Ollama，§7.5）；**狼队私聊每晚刀前一轮**（§5.4）；**警长竞选候选人发言打开**（§5.6）；trace **全量记录**（token/延迟/非法输出/回退/`<think>` 推理，§8.2）；引擎 `ask` **可配软超时**（默认 600s，§4.7）。
+**已定运行参数（M15，详见对应小节）**：本地模型 **deepseek-r1:14b**（Ollama，§7.5）；**狼队私聊每晚刀前一轮**（§5.4）；**警长竞选候选人发言打开**（§5.6）；trace **全量记录**（token/延迟/非法输出/回退/`<think>` 推理，§8.2）；引擎 `ask` **可配软超时**（默认 600s，§4.7）。
 
 **核心不变量：C++ 引擎的规则/结算/胜负逻辑一行都不改。** 本里程碑新增的全部是 I/O 层（一个走 JSON 协议的 `DecisionProvider` + 一个结构化事件发射器）、两处纯增量的流程步骤（狼队私聊、打开候选人发言）、以及 C++ 之外的 orchestrator。现有 104 个 GoogleTest 全程保持绿。
 
@@ -28,7 +28,7 @@
 1. 引擎以 JSON-lines 协议对外暴露**每个座位**的决策请求与信息事件。
 2. Python orchestrator 启动引擎子进程，按座位把请求路由到「人类终端」或「AgentBrain」。
 3. 每个 AgentBrain 依据**自己被允许知道的信息**（角色 + 收到的事件）发言与决策；能读懂他人（含真人）的发言。
-4. 接入**本地单模型**（deepseek-r1:32b）：N 个 AI 席共享一个模型、各自 persona。`LlmClient` 抽象层让远程 API（带 API key）随后即插。
+4. 接入**本地单模型**（deepseek-r1:14b）：N 个 AI 席共享一个模型、各自 persona。`LlmClient` 抽象层让远程 API（带 API key）随后即插。
 5. **每晚刀前**加一轮**狼队私聊**；并**打开警长竞选候选人发言**（引擎现状是跳过，打开后更贴合 BRD §7.2）。
 6. 产出两份记录：**上帝视角 script**（人读、复盘）+ **post-training JSONL trace**（机读、训练）。
 7. 跑通一整局 9 人板（1 人类 + 8 AI），并验证：没有任何 agent 能看到他人身份；游戏一定终止。
@@ -212,7 +212,7 @@ JSON-lines（每行一个 JSON 对象，UTF-8，`\n` 分隔）。引擎与 orche
 引擎是权威方，必须对坏输入鲁棒：
 - `reply.choice` 不在候选集 / 类型错误 / JSON 解析失败 → 引擎回退到**合法默认**（`allowSkip` 则跳过；否则投票取第一个非自己、其余取首候选），并发一条 `vis=moderator` 的 `narration` 记录这次回退。
 - orchestrator 侧的超时/模型故障由 orchestrator 兜底（AgentBrain 自带重试+回退，§7.4），最终总会给引擎一个**合法 reply**，使引擎不必等待无限期。
-- 引擎对 `ask` 设**可配置软超时**（`--ask-timeout`，默认 **600s**）仅作防挂死；超时则回退到合法默认并记一条 `vis=moderator` 事件。**注意**：本地 deepseek-r1:32b 是推理模型，单次决策可能耗时数十秒~数分钟（§7.5），故默认放宽到 600s，并用 `num_predict` 收紧输出上限来兜住最坏时延；正常路径不触发。
+- 引擎对 `ask` 设**可配置软超时**（`--ask-timeout`，默认 **600s**）仅作防挂死；超时则回退到合法默认并记一条 `vis=moderator` 事件。**注意**：本地 deepseek-r1:14b 是推理模型，单次决策可能耗时数十秒~数分钟（§7.5），故默认放宽到 600s，并用 `num_predict` 收紧输出上限来兜住最坏时延；正常路径不触发。
 
 ---
 
@@ -345,7 +345,7 @@ class LlmClient(Protocol):
 ### 7.2 后端与配置
 
 后端（实现同一 `LlmClient`）：
-- `OllamaClient(model, host="http://localhost:11434")` — **本期默认**。结构化输出用 `format: "json"` + schema 提示；对 R1 做适配（§7.5）。
+- `OllamaClient(model, host="http://localhost:11434")` — **本期默认**。**不强制 `format:"json"`**（会抑制 R1 的思考）；靠 prompt 约定 + §7.4 宽松解析兜底。对 R1 做适配（§7.5）。
 - `OpenAICompatClient(base_url, api_key_env, model)` — 覆盖 OpenAI 及大量兼容服务；结构化用 `response_format=json_schema` / function calling。
 - `AnthropicClient(api_key_env, model)` — Anthropic Messages API；结构化用 tool use。
 - 后续：其它家照此添加。
@@ -358,8 +358,8 @@ seed: 12345
 human_seat: 1
 default_ai:                          # 不写 seats 的 AI 席都用它
   provider: ollama
-  model: "deepseek-r1:32b"           # 本期本地默认（§7.5）
-  options: { num_ctx: 8192, temperature: 0.6, top_p: 0.95, num_predict: 1024 }
+  model: "deepseek-r1:14b"           # 本期本地默认（§7.5）
+  options: { num_ctx: 8192, temperature: 0.6, top_p: 0.95, num_predict: 2048 }
 seats:                               # 覆盖个别席位
   4: { persona: aggressive }                                  # 仍用 default_ai 的模型
   7: { provider: anthropic, model: "claude-...", api_key_env: ANTHROPIC_API_KEY, persona: cautious }  # 远程示例（随后启用）
@@ -404,7 +404,7 @@ AgentBrain(seat, role_info, persona, llm: LlmClient):
   6. **公共事件**：死讯、计票、警长流程、阶段横幅——来自 public 事件。
   即 §3 的「全部 public 事件 ∪ seat==自己的 private 事件」，**全程累积、不丢**。
 - **心里话 vs 公开发言分离**：`reasoning`（含 R1 的 `<think>`，§7.5）只进 trace + 自己的记忆，**绝不广播**；只有 `speak` 的 `text` 才经引擎广播。这正是狼人杀「内心/明面」的天然分裂，也是最值钱的训练信号。
-- **上下文预算（重要）**：deepseek-r1:32b 的 `num_ctx` 受内存限制只能开到 ~8192（§7.5），而中后期 view + R1 的 `<think>` 很容易超。渲染 view 时要**分级保真**：角色/私密结果/各人发言**逐字保留**，较旧的阶段横幅/法官叙述**可压缩或摘要**。长局滚动摘要作为**必做项**（非"可选优化"）。
+- **上下文预算（重要）**：deepseek-r1:14b 的 `num_ctx` 受内存限制只能开到 ~8192（§7.5），而中后期 view + R1 的 `<think>` 很容易超。渲染 view 时要**分级保真**：角色/私密结果/各人发言**逐字保留**，较旧的阶段横幅/法官叙述**可压缩或摘要**。长局滚动摘要作为**必做项**（非"可选优化"）。
 
 ### 7.4 解析 / 校验 / 回退（保证游戏永不卡死）
 
@@ -423,9 +423,9 @@ parse_and_validate(out, ask):
 
 合法默认与 `BotChannel` 一致（[bot_channel.cpp](../src/io/bot_channel.cpp)）：投票投首个非自己，其余可跳过则跳过。**无论模型多离谱，orchestrator 总返回一个合法 reply。**
 
-### 7.5 本地模型：deepseek-r1:32b（M5 / 32GB Mac Air）
+### 7.5 本地模型：deepseek-r1:14b（默认；32b 为质量档）
 
-本期默认本地模型。deepseek-r1 是**推理模型**（输出带 `<think>…</think>`），对参数与提示方式有特定要求。
+本期实跑 **deepseek-r1:14b**（用户为速度选它；32b 更强但在 Mac Air 上更慢，留作质量档）。deepseek-r1 是**推理模型**（产出 `<think>` 思考），对参数与提示方式有特定要求。
 
 **Ollama 参数（偏稳、保证能跑）：**
 
@@ -434,7 +434,7 @@ parse_and_validate(out, ask):
 | `num_ctx` | **8192**（紧张则 4096） | 上下文窗口。权重 Q4 约 20GB，32GB 机器留给 KV cache 的余量有限；8192 较安全，若见到换页/明显变慢就降到 4096 并加强 view 摘要（§7.3）。 |
 | `temperature` | **0.6** | DeepSeek 官方对 R1 的推荐（0.5–0.7，0.6 最佳）；过低反而退化。 |
 | `top_p` | **0.95** | 官方推荐。 |
-| `num_predict` | **1024**（发言可放到 1536） | 输出上限（含 `<think>`）。收紧它来**兜住最坏时延**，配合 §4.7 的软超时。 |
+| `num_predict` | **2048** | 输出上限。**必须同时覆盖 thinking + 最终答案**——给太小（如 1024）会在长 prompt 下被思考吃光、`content` 返回空 → 触发回退。 |
 | `seed` | 可配 | 设定后利于复现 trace（发牌已由引擎 `--seed` 固定）。 |
 
 **R1 适配（务必照做，否则效果差）：**
@@ -445,8 +445,12 @@ parse_and_validate(out, ask):
    - 这天然喂给「心里话 vs 明面」的分离（§7.3）。
 3. **结构化输出靠兜底**：R1 不保证严格遵守 JSON schema，提示里明确「思考结束后**只输出一行 JSON**：`{"choice": <座位号|null>}`」，并由 §7.4 的「解析→校验→重试→合法默认」保证永不卡死。
 
-**时延与内存现实（坦白说）：** 32B 推理模型在无风扇的 Mac Air 上**会慢**——单次决策（含数百~数千 think token）可能数十秒到数分钟。一整局 8 个 AI、多天多阶段，跑完一局可能耗时较长。这是「保证能跑起来」的取舍。
-- **想快速迭代** 时，把 `default_ai.model` 换成更小/非推理模型，**只改配置**，AgentBrain/协议不动；32b 留作"质量档"。需先在终端手动拉取，例如：`ollama pull deepseek-r1:14b`（或 `ollama pull qwen2.5:14b-instruct`）。
+**实测（deepseek-r1:14b @ Ollama，已接通验证）：**
+- Ollama 把 **thinking 与 content 分字段**返回；`OllamaClient` 把 `thinking` 包回 `<think>…</think>` 拼在 content 前，供 `AgentBrain` 统一切分（reasoning 进 trace、**绝不广播**）。
+- `think:false` 在本机**不可靠**（choose 仍思考、speak 直接拒答），故**默认保持 think 开**。
+- 已验证可用：choose 返回**模型真实选择**（非回退）、speak 为干净的第一人称发言、`<think>` 不外泄。
+- **时延：单次决策约 17–35s**（M 芯片 Air，14b）。整局 8 AI、多天多阶段会**很慢**（约数十分钟~数小时）——14b 推理在该硬件上的现实。**管线检查/调试用 `--fake`（秒级）**；真模型整局挑时间跑。
+- 想更快可换更小模型（`--model deepseek-r1:1.5b`/`7b`），但 R1 越小策略越弱。
 
 ---
 
@@ -466,7 +470,7 @@ parse_and_validate(out, ask):
   "qtype":"choose", "kind":"WitchPoison",
   "visible_context":[ /* 决策时该 brain 的 view 快照 */ ],
   "prompt_sent":[ /* 实际发给模型的 messages */ ],
-  "model":"deepseek-r1:32b",
+  "model":"deepseek-r1:14b",
   "raw_output":"<think>…</think>{\"choice\":5}",   // 含原始 think
   "reasoning":"…",            // 从 <think> 切出（R1，§7.5）
   "parsed":{"choice":5},
@@ -506,7 +510,7 @@ parse_and_validate(out, ask):
 2. **引擎：EventSink + JsonDecisionProvider + `--json` 模式**（§5.1/5.2/5.5）。配协议测试。引擎规则不动，104 用例保持绿。
 3. **引擎：狼队私聊（§5.4）+ 候选人发言（§5.6）+ 发言广播 `speech` 事件**。配流程测试。
 4. **Python orchestrator 骨架**：EngineProcess + EventRouter + HumanTerminal + Recorder。先用 `FakeLlmClient` 跑通端到端（全 AI 走假大脑），验证整局完成 + 两份记录产出 + 公平性断言。
-5. **LlmClient + OllamaClient(R1 适配) + AgentBrain**（§7）：接本地 deepseek-r1:32b，跑通 1 人类 + 8 AI 的真实一局，人读 `god_script.md` 检查发言质量。
+5. ✅ **LlmClient + OllamaClient(R1 适配) + AgentBrain**（§7）：接本地 deepseek-r1:14b——per-decision 已验证（真实选择 + 干净第一人称发言 + reasoning 入 trace、不外泄）。真模型整局较慢（§7.5），挑时间跑；管线/调试用 `--fake`。
 6. **打磨**：persona 多样化、prompt 模板、`<think>` 解析鲁棒性、view 滚动摘要、trace 字段完善。
 
 里程碑达成判据：**1 真人 + 8 本地 AI 跑完一局 9 人板（含狼私聊、候选人发言、发言、夜间技能、投票、警长），产出完整上帝 script 与 trace，且公平性测试通过。**
@@ -530,7 +534,7 @@ parse_and_validate(out, ask):
 
 | # | 问题 | 决定 |
 | --- | --- | --- |
-| 1 | 本地模型选型与参数 | **deepseek-r1:32b**（Ollama）；num_ctx 8192 / temp 0.6 / top_p 0.95 / num_predict 1024；R1 适配见 **§7.5**。想快可换更小模型，仅改配置。 |
+| 1 | 本地模型选型与参数 | **deepseek-r1:14b**（Ollama）；num_ctx 8192 / temp 0.6 / top_p 0.95 / num_predict 2048；R1 适配见 **§7.5**。想快可换更小模型，仅改配置。 |
 | 2 | 狼私聊轮数 | **每晚刀前 1 轮**（顺序发言）；多轮/自由往复留后续（§5.4）。 |
 | 3 | 真人 UX | **朴素逐行打字**即可；重点是 **AgentBrain 完整记忆**（§7.3）。TUI 留后续。 |
 | 4 | 警长竞选候选人发言 | **打开**（§5.6）。 |
@@ -538,7 +542,7 @@ parse_and_validate(out, ask):
 | 6 | 引擎 ask 软超时 | **可配，默认 600s**（§4.7），因本地推理模型慢而放宽。 |
 
 **仍待实测/微调（开发中定）：**
-- deepseek-r1:32b 在你机器上的实际时延 / num_ctx 上限 / 是否需降到 14b（§7.5）。
+- deepseek-r1:14b 在你机器上的实际时延 / num_ctx 上限 / 是否需降到 14b（§7.5）。
 - view 滚动摘要的触发阈值与保真策略（§7.3）。
 - 「自爆狼再聊一晚」的忠实度精修是否要做（§5.4，无机制影响，可后补）。
 

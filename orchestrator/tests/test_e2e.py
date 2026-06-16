@@ -28,7 +28,7 @@ class E2ETest(unittest.TestCase):
             self.skipTest(f"engine not built at {ENGINE} (run cmake --build build)")
 
     def _run(self, board: int, seed: int, out_dir: str) -> Orchestrator:
-        cfg = Config(board=board, seed=seed, human_seat=None,
+        cfg = Config(board=board, seed=seed, human_seat=None, provider="fake",
                      engine_path=str(ENGINE), out_dir=out_dir)
         orch = Orchestrator(cfg)
         orch.run()

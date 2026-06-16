@@ -60,10 +60,10 @@ class AgentBrain:
         messages = self._render(ask)
         system = self._system_prompt()
 
+        attempts: list[dict] = []
         t0 = time.monotonic()
         comp = self.llm.complete(system, messages, schema=schema)
         latency_ms = int((time.monotonic() - t0) * 1000)
-
         reasoning, answer = _split_think(comp.text)
         parsed, fallback = self._parse(ask, answer)
 
@@ -72,6 +72,7 @@ class AgentBrain:
             reply["reasoning"] = reasoning
 
         trace = {
+            "attempts": attempts,
             "seat": self.seat, "role": self.role, "day": ask.get("day"),
             "phase": ask.get("phase"), "qtype": qtype, "kind": ask.get("kind"),
             "visible_context": [
@@ -99,10 +100,10 @@ class AgentBrain:
         if self.persona:
             lines.append(f"风格：{self.persona}")
         lines += [
-            "输出约定（务必遵守）：",
-            '- 选择类(choose)：只输出一行 JSON，如 {"choice": 座位号} 或 {"choice": null}（跳过/弃权/空刀）。',
-            '- 是非类(confirm)：只输出一行 JSON，如 {"decision": true} 或 {"decision": false}。',
-            "- 发言类(speak)：只输出你要当众说的话本身；不要输出任何思考过程。",
+            "你可以先在 <think></think> 里思考；思考结束后再给出结果。输出约定（务必遵守）：",
+            '- 选择类(choose)：思考后，最后必须单独输出一行 JSON，如 {"choice": 座位号} 或 {"choice": null}（跳过/弃权/空刀）。',
+            '- 是非类(confirm)：思考后，最后必须单独输出一行 JSON：{"decision": true} 或 {"decision": false}。',
+            "- 发言类(speak)：直接以第一人称说出你要当众讲的话，像在牌桌上发言；不要解释、不要复述规则、不要加“发言内容：”之类前缀。",
         ]
         return "\n".join(lines)
 
@@ -119,6 +120,8 @@ class AgentBrain:
         if ask["qtype"] == "choose":
             opts = "、".join(f'P{c["seat"]}' for c in ask.get("candidates", []))
             body.append(f"可选：{opts}" + ("；也可不选（跳过/弃权）。" if ask.get("allowSkip") else "。"))
+        elif ask["qtype"] == "speak":
+            body.append(f"（请直接以 P{self.seat} 的第一人称说出这句话，不要解释、不要加前缀。）")
         return [{"role": "user", "content": "\n".join(body)}]
 
     @staticmethod

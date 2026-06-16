@@ -14,7 +14,7 @@ from typing import Callable, Optional
 
 from orchestrator.brain import AgentBrain
 from orchestrator.engine import EngineProcess
-from orchestrator.llm import FakeLlmClient, LlmClient
+from orchestrator.llm import FakeLlmClient, LlmClient, OllamaClient
 from orchestrator.recorder import Recorder
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -33,8 +33,14 @@ class Config:
     ask_timeout: int = 600
     out_dir: str = field(default_factory=lambda: str(_REPO_ROOT / "games"))
     personas: dict[int, str] = field(default_factory=dict)
-    # seat -> LlmClient factory; default = FakeLlmClient for every AI seat.
-    llm_factory: Callable[[int], LlmClient] = field(default=lambda seat: FakeLlmClient())
+    # AI backend: "ollama" (local deepseek-r1) or "fake" (deterministic, for tests).
+    provider: str = "ollama"
+    model: str = "deepseek-r1:14b"
+    ollama_host: str = "http://localhost:11434"
+    request_timeout: int = 600
+    num_ctx: int = 8192
+    # Optional explicit per-seat factory; overrides provider/model when set (tests).
+    llm_factory: Optional[Callable[[int], LlmClient]] = None
 
 
 class HumanTerminal:
@@ -82,6 +88,14 @@ class Orchestrator:
         self.recorder: Optional[Recorder] = None
         self.result: Optional[str] = None
 
+    def _make_llm(self, seat: int) -> LlmClient:
+        if self.cfg.llm_factory is not None:
+            return self.cfg.llm_factory(seat)
+        if self.cfg.provider == "fake":
+            return FakeLlmClient()
+        return OllamaClient(self.cfg.model, self.cfg.ollama_host,
+                            num_ctx=self.cfg.num_ctx, timeout=self.cfg.request_timeout)
+
     def _setup_seats(self, msg: dict) -> None:
         os.makedirs(self.cfg.out_dir, exist_ok=True)
         game_id = f"board{self.cfg.board}-seed{self.cfg.seed}"
@@ -97,7 +111,7 @@ class Orchestrator:
                 self.human = HumanTerminal(seat, name)
             else:
                 self.brains[seat] = AgentBrain(
-                    seat=seat, name=name, llm=self.cfg.llm_factory(seat),
+                    seat=seat, name=name, llm=self._make_llm(seat),
                     persona=self.cfg.personas.get(seat, ""),
                 )
 

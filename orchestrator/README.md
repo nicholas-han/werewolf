@@ -5,7 +5,7 @@ Python sidecar that drives the C++ engine over the JSON-lines protocol
 authority; this process owns the human terminal, the AI brains, the model
 backend, and the records. Design: [../docs/ai_agents_design.md](../docs/ai_agents_design.md).
 
-## 运行（步骤 4：FakeLlmClient，无需真模型）
+## 运行
 
 先构建引擎：
 
@@ -13,13 +13,15 @@ backend, and the records. Design: [../docs/ai_agents_design.md](../docs/ai_agent
 cmake -B build && cmake --build build      # 产出 build/werewolf
 ```
 
-跑一局（全部 AI 由 FakeLlmClient 驱动，确定性、可跑通端到端）：
+默认用本地 **Ollama `deepseek-r1:14b`**（须先 `ollama serve` 且 `ollama pull deepseek-r1:14b`）：
 
 ```bash
-python3 -m orchestrator --board 1 --seed 12345 --out-dir ./games
-# 1 真人 + 其余 AI：加 --human-seat <座位号>
-python3 -m orchestrator --board 1 --seed 12345 --human-seat 1
+python3 -m orchestrator --board 1 --seed 12345                 # 全 AI（真模型，较慢）
+python3 -m orchestrator --board 1 --seed 12345 --human-seat 1  # 你坐 1 号，其余 AI
+python3 -m orchestrator --fake                                 # 确定性假模型，秒级（管线/调试）
 ```
+
+> 真模型整局**很慢**（14b 推理约 17–35s/决策，整局数十分钟~数小时）；快速验证用 `--fake`。
 
 产物：
 - `games/god_script.md` — 上帝视角复盘（含所有 public / private / moderator 事件）。
@@ -42,6 +44,6 @@ python3 orchestrator/tests/test_e2e.py     # 整局跑通 + 两份记录 + §11 
 | `runner.py` | `Config` / `HumanTerminal` / `Orchestrator` 主循环 + 座位路由 |
 | `__main__.py` | CLI 入口 |
 
-## 下一步（步骤 5）
+## 本地模型（已接通）
 
-接本地 `deepseek-r1:32b`（Ollama）：新增 `OllamaClient(LlmClient)`（R1 适配：system 折进 user、解析 `<think>`、`num_ctx 8192 / temp 0.6`，见设计文档 §7.5），并让 `Config.llm_factory` 按配置选后端。AgentBrain 与协议不变。
+`OllamaClient` 接本地 `deepseek-r1:14b`（R1 适配见设计文档 §7.5：system 折进 user；Ollama 分离的 `thinking` 包回 `<think>` 供切分；`num_ctx 8192 / temp 0.6 / num_predict 2048`；不强制 `format:json`）。换模型只改 `--model`（`deepseek-r1:1.5b` 更快、`deepseek-r1:32b` 更强）。接远程（API key）只需新增一个 `LlmClient` 后端，AgentBrain/协议不变。
