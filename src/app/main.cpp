@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -15,6 +16,7 @@
 #include "io/bot_channel.h"
 #include "io/console_decision_provider.h"
 #include "io/decision_provider.h"
+#include "io/json_decision_provider.h"
 #include "io/pass_and_play_decision_provider.h"
 #include "io/player_channel.h"
 #include "io/routing_decision_provider.h"
@@ -83,10 +85,50 @@ std::optional<std::vector<RoleKind>> promptSetup(const Board& board, std::istrea
     return seatRoles;
 }
 
+// JSON-protocol mode (M15, docs/protocol_v1.md): the engine speaks the per-seat
+// protocol on stdin/stdout for an external orchestrator. No interactive prompts;
+// stdout carries ONLY protocol lines (debug goes to stderr).
+int runJson(int boardSel, unsigned seed, bool haveSeed) {
+    Board board = (boardSel == 3) ? makeBoard12_PsychicMechanic()
+                  : (boardSel == 2) ? makeBoard12_GuardWolfGun()
+                                    : makeBoard9_SeerWitchHunter();
+    if (!haveSeed) {
+        std::random_device rd;
+        seed = rd();
+    }
+    std::vector<RoleKind> seatRoles = randomDeal(board, seed);
+    JsonDecisionProvider provider(std::cin, std::cout, board.name, seed);
+    Game game(board, provider, seatRoles);
+    provider.emitGameStart(game.state());
+    provider.emitDeals(game.state());
+    GameResult result = game.run();
+    provider.emitGameOver(result);
+    return 0;
+}
+
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
     using namespace ww;
+
+    bool jsonMode = false;
+    int boardSel = 1;
+    unsigned seed = 0;
+    bool haveSeed = false;
+    for (int i = 1; i < argc; ++i) {
+        std::string a = argv[i];
+        if (a == "--json") {
+            jsonMode = true;
+        } else if (a == "--board" && i + 1 < argc) {
+            boardSel = std::atoi(argv[++i]);
+        } else if (a == "--seed" && i + 1 < argc) {
+            seed = static_cast<unsigned>(std::strtoul(argv[++i], nullptr, 10));
+            haveSeed = true;
+        } else if (a == "--ask-timeout" && i + 1 < argc) {
+            ++i;  // accepted for protocol compatibility; not enforced in v1
+        }
+    }
+    if (jsonMode) return runJson(boardSel, seed, haveSeed);
 
     std::cout << "=== 狼人杀（法官控制台）===\n";
     std::cout << "选择板子：1) 9 人预女猎  2) 12 人预女猎守 + 狼枪  3) 12 人通灵机械狼\n> ";
