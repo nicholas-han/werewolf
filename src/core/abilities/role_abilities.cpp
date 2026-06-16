@@ -46,8 +46,10 @@ void WitchPotions::actAtNight(NightContext& ctx, GameState& state, Player& owner
                               DecisionProvider& provider) {
     bool savedThisNight = false;
 
-    // Antidote: only offered while unused, and the witch learns the knifed
-    // player only in that case (BRD §2 死讯可见性).
+    // Antidote: only offered while unused, and only for the NORMAL knife
+    // (BRD §2 死讯可见性). The mechanic's 破盾大刀 is a guaranteed kill — it ignores
+    // the guard AND the antidote, and the witch is never told its target (§2/§5.2),
+    // so ctx.bigKnifeTarget is deliberately not surfaced here.
     if (state.witchAntidoteAvailable && ctx.wolfTarget.has_value()) {
         const int knifed = *ctx.wolfTarget;
         // Self-rescue policy (BRD §2). First board: Never.

@@ -297,6 +297,34 @@ TEST(Game, MechanicBigKnifePiercesGuard) {
     EXPECT_TRUE(game.state().find(4)->hasDeathCause(DeathCause::Killed));
 }
 
+TEST(Game, BigKnifeUnsaveableAndHiddenFromWitch) {
+    // §2: 破盾大刀 is a guaranteed kill — it ignores the guard AND the witch's
+    // antidote, and the witch is never told its target. seats: 1 wolf, 2 mechanic,
+    // 3 witch, 4-5 civ. After learning wolf and exiling the wolf, the lone mechanic
+    // 空刀 on its normal knife but fires the big knife at civ 5; the witch has her
+    // antidote and would save anyone she's offered — but she is never offered the
+    // big-knife target, so civ 5 dies and her antidote stays unused.
+    Board board;
+    board.name = "bigknife-unsaveable";
+    board.roster = {{RoleKind::Werewolf, 1}, {RoleKind::MechanicWolf, 1}, {RoleKind::Witch, 1},
+                    {RoleKind::Civilian, 2}};
+    board.config.winRule = WinRule::KillAll;
+    board.config.sheriffEnabled = false;
+
+    ScriptedDecisionProvider dp;
+    dp.mechanicLearns = {1};                       // n1 learn the werewolf -> gains 大刀
+    dp.nightKills = {std::nullopt, std::nullopt};   // n1 空刀 ; n2 normal lone knife 空刀
+    dp.mechanicBigKnives = {5};                    // n2 大刀 -> civ 5 (no normal target)
+    dp.witchSaves = {true};                        // she'd save if ever asked — but isn't
+    dp.votes = {2, 1, 1, 1, 1, /*day2*/ 3, 2, 2};  // d1 exile wolf(1); d2 exile mechanic(2)
+
+    Game game(board, dp);
+    EXPECT_EQ(game.run(), GameResult::TownWins);
+    EXPECT_FALSE(game.state().find(5)->isAlive());                          // big knife killed it
+    EXPECT_TRUE(game.state().find(5)->hasDeathCause(DeathCause::Killed));
+    EXPECT_TRUE(game.state().witchAntidoteAvailable);  // witch was never offered the big-knife target
+}
+
 TEST(Game, MechanicGuardReflectsPoison) {
     // KillAll, sheriff off: werewolf, mechanic, witch, guardian, civilian.
     Board board;

@@ -281,8 +281,9 @@ GameResult Game::runNight() {
     if (ctx.wolfTarget && guarded(*ctx.wolfTarget) == saved(*ctx.wolfTarget)) {
         batch.push_back({*ctx.wolfTarget, DeathCause::Killed});
     }
-    // 破盾大刀: ignores the guard; only an antidote could save it (§2).
-    if (ctx.bigKnifeTarget && !saved(*ctx.bigKnifeTarget)) {
+    // 破盾大刀: a guaranteed kill — ignores BOTH the guard and the witch's antidote
+    // (the witch is never even told its target, §2/§5.2). Always dies.
+    if (ctx.bigKnifeTarget) {
         batch.push_back({*ctx.bigKnifeTarget, DeathCause::Killed});
     }
     // Poison: the guard does not block it — EXCEPT the mechanic's learned guard,
