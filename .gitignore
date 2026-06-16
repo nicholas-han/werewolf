@@ -70,3 +70,11 @@ Testing/
 
 # editor / notes app config
 .obsidian/
+
+# Python orchestrator
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Generated game records (god_script.md / trace.jsonl)
+games/
