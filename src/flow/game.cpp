@@ -362,32 +362,109 @@ Game::ElectionOutcome Game::resolveElectionSelfDestruct(int sd, const std::vecto
     // §7.4 警徽落地归另一人: a PK candidate blowing up leaves exactly one -> auto-win.
     const bool pkCollapseElect = contains(pkLeaders, sd) && pkLeft.size() == 1;
 
-    if (pkCollapseElect) {  // a sheriff IS produced; election resolved
+    bool electSurvivor = false;
+    if (wasDeferred) {  // §7.5: a 2nd interruption (day 2) kills the badge forever
+        badgeAbandoned_ = true;        // (even a PK candidate blowing up — §7.4 only
+        electionResolved_ = true;      //  hands the badge over on day 1)
+        electionDeferred_ = false;
+    } else if (pkCollapseElect) {  // §7.4: day-1 PK collapse -> the survivor auto-wins
         electionResolved_ = true;
         electionDeferred_ = false;
-    } else if (wasDeferred) {  // 2nd interruption (day 2) -> badge gone forever (§7.5)
-        badgeAbandoned_ = true;
-        electionResolved_ = true;
-        electionDeferred_ = false;
-    } else {  // 1st interruption (day 1) -> defer the election to day 2 (§7.4)
+        electSurvivor = true;
+    } else {  // §7.4: day-1 first interruption -> defer to day 2 (§7.5)
         electionResolved_ = false;
         electionDeferred_ = true;
+        // Remember the PK survivors for day 2 (§7.5 情形 B). Empty when interrupted
+        // before the PK (情形 A -> day 2 re-registers).
+        deferredPkCandidates_ = pkLeft;
     }
 
     GameResult r = announceThenSelfDestruct(sd);
     if (r != GameResult::Ongoing) return {r, false};
 
-    if (pkCollapseElect) {
+    if (electSurvivor) {
         provider_.notify(txt::autoSheriff(nameOrId(state_, pkLeft.front())));
         electSheriff(pkLeft.front());
     }
     return {GameResult::Ongoing, true};  // self-destruct ends the day -> night
 }
 
-Game::ElectionOutcome Game::runSheriffElection() {
-    const bool deferred = electionDeferred_;
-    provider_.notify(deferred ? txt::electionDeferred() : txt::electionBegin());
+Game::ElectionOutcome Game::runDeferredElection() {
+    provider_.notify(txt::electionDeferred());  // §7.5: 顺延，仅投票（无发言）
+    const std::vector<int> alive = aliveIds();
+    const bool fromPk = !deferredPkCandidates_.empty();
 
+    // Candidates (§7.5): interrupted AT the PK (情形 B) -> carry only the still-alive
+    // PK survivors, no re-registration; interrupted before it (情形 A) -> everyone
+    // re-decides 上警 (no speeches).
+    std::vector<int> candidates;
+    if (fromPk) {
+        for (int id : deferredPkCandidates_) {
+            const Player* p = state_.find(id);
+            if (p && p->isAlive()) candidates.push_back(id);
+        }
+    } else {
+        for (int id : alive) {
+            if (provider_.chooseRunForSheriff(state_, id)) candidates.push_back(id);
+        }
+    }
+    deferredPkCandidates_.clear();
+
+    if (candidates.empty()) {  // nobody ran / no PK survivor -> no sheriff
+        electionResolved_ = true;
+        electionDeferred_ = false;
+        provider_.notify(txt::noSheriffNobodyRan());
+        return {GameResult::Ongoing, false};
+    }
+    if (!fromPk && candidates.size() == alive.size()) {  // §7.3 全员上警 -> badge lost
+        electionResolved_ = true;
+        electionDeferred_ = false;
+        provider_.notify(txt::badgeLostEveryoneRan());
+        return {GameResult::Ongoing, false};
+    }
+
+    // A second self-destruct on day 2 kills the badge for the whole game (§7.5).
+    {
+        const std::vector<int> wolves = selfDestructWolfCandidates();
+        if (!wolves.empty()) {
+            if (std::optional<int> sd = provider_.chooseSelfDestruct(state_, wolves)) {
+                return resolveElectionSelfDestruct(*sd, candidates, /*wasDeferred=*/true);
+            }
+        }
+    }
+
+    electionResolved_ = true;
+    electionDeferred_ = false;
+
+    if (candidates.size() == 1) {  // only one candidate -> auto-elected
+        provider_.notify(txt::autoSheriff(nameOrId(state_, candidates.front())));
+        electSheriff(candidates.front());
+        return {GameResult::Ongoing, false};
+    }
+
+    // Single direct vote — everyone NOT a candidate votes (abstain allowed, §7.5).
+    provider_.notify(txt::sheriffVoteHeader());
+    provider_.notify(txt::sheriffCandidates(joinNames(state_, candidates)));
+    std::map<int, double> counts;
+    for (int v : alive) {
+        if (contains(candidates, v)) continue;
+        std::optional<int> pick = provider_.chooseSheriffVote(state_, v, candidates);
+        if (pick && contains(candidates, *pick)) counts[*pick] += 1.0;
+    }
+    provider_.notify(txt::sheriffVotes(fmtVotes(state_, counts)));
+    std::vector<int> leaders = topCandidates(counts);
+    if (leaders.size() == 1) {
+        electSheriff(leaders.front());
+        return {GameResult::Ongoing, false};
+    }
+    provider_.notify(txt::badgeLostTie());  // day-2 tie: no runoff speeches -> badge lost
+    return {GameResult::Ongoing, false};
+}
+
+Game::ElectionOutcome Game::runSheriffElection() {
+    if (electionDeferred_) return runDeferredElection();  // §7.5 day-2 vote-only
+
+    provider_.notify(txt::electionBegin());
     const std::vector<int> alive = aliveIds();
 
     // 1. Stand for sheriff (§7.2).
@@ -418,7 +495,7 @@ Game::ElectionOutcome Game::runSheriffElection() {
         const std::vector<int> wolves = selfDestructWolfCandidates();
         if (!wolves.empty()) {
             if (std::optional<int> sd = provider_.chooseSelfDestruct(state_, wolves)) {
-                return resolveElectionSelfDestruct(*sd, /*pkLeaders=*/{}, deferred);
+                return resolveElectionSelfDestruct(*sd, /*pkLeaders=*/{}, /*wasDeferred=*/false);
             }
         }
     }
@@ -476,7 +553,7 @@ Game::ElectionOutcome Game::runSheriffElection() {
         const std::vector<int> wolves = selfDestructWolfCandidates();
         if (!wolves.empty()) {
             if (std::optional<int> sd = provider_.chooseSelfDestruct(state_, wolves)) {
-                return resolveElectionSelfDestruct(*sd, leaders, deferred);
+                return resolveElectionSelfDestruct(*sd, leaders, /*wasDeferred=*/false);
             }
         }
     }

@@ -46,6 +46,9 @@ private:
     bool electionResolved_ = false;   // election finished (with or without a sheriff)
     bool electionDeferred_ = false;   // interrupted on day 1 -> day 2 vote-only
     bool badgeAbandoned_ = false;     // interrupted twice -> no badge for the whole game
+    // §7.5: if day 1 was interrupted AFTER reaching the PK, the carried-over PK
+    // candidates for day 2 (empty = interrupted before the PK -> day 2 re-registers).
+    std::vector<int> deferredPkCandidates_;
 
     GameResult runNight();
     GameResult runDay();
@@ -56,6 +59,10 @@ private:
         bool interrupted = false;  // a wolf self-destructed mid-election (§7.4)
     };
     ElectionOutcome runSheriffElection();
+    // §7.5: the day-2 deferred election — no speeches, a single direct vote. Either
+    // re-registers everyone (interrupted before the PK) or carries only the day-1
+    // PK candidates (interrupted at the PK).
+    ElectionOutcome runDeferredElection();
 
     // Wolves eligible to self-destruct during the election: alive wolves plus any
     // wolf that died at night but isn't announced yet (§2 自爆吞毒).

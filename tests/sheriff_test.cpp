@@ -175,3 +175,25 @@ TEST(Sheriff, SelfDestructInterruptsElectionThenDefersToDay2) {
     ASSERT_TRUE(game.state().sheriffId.has_value());
     EXPECT_EQ(*game.state().sheriffId, 3);
 }
+
+TEST(Sheriff, DeferredFromPkCarriesOnlyPkCandidates) {
+    // §7.5 情形 B: day 1 reaches the PK (seats 3 & 4 tie), then a THIRD party (wolf
+    // seat 1) self-destructs -> defer. Day 2 must carry ONLY the PK candidates {3,4}
+    // with NO re-registration, then vote. (runForSheriff has day-1 entries only; if
+    // the engine wrongly re-registered, the empty queue would elect nobody.)
+    ScriptedDecisionProvider dp;
+    dp.runForSheriff = {false, false, true, true, false};  // day1: seats 3 & 4 run
+    dp.selfDestructs = {std::nullopt, 1};      // day1: none initially; seat 1 blows up in the PK
+    dp.sheriffVotes = {3, 4, std::nullopt,     // day1 round1 voters [1,2,5]: tie 3 vs 4
+                       3};                      // day2: lone voter [2] -> seat 3
+    dp.withdraws = {false, false};             // day1 withdrawal window for [3,4]
+    dp.nightKills = {std::nullopt, 5};         // n1 peaceful ; n2 kill civ 5
+    dp.votes = {4, 2};                          // day2 exile: seat2->4, seat4->2
+    dp.sheriffExileBallots = {SheriffBallot{true, 2}};  // sheriff(3) 归单人 -> exile wolf 2
+
+    Game game(mkBoard("defer-pk", {{RoleKind::Werewolf, 2}, {RoleKind::Civilian, 3}}), dp);
+    EXPECT_EQ(game.run(), GameResult::TownWins);
+    EXPECT_TRUE(game.state().find(1)->hasDeathCause(DeathCause::BlownUp));
+    ASSERT_TRUE(game.state().sheriffId.has_value());
+    EXPECT_EQ(*game.state().sheriffId, 3);  // PK candidate won via the carried list
+}
