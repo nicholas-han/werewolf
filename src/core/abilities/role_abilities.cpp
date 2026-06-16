@@ -226,9 +226,16 @@ void MechanicLearnedShoot::onDeath(GameState& state, Player& owner, DecisionProv
 
 void HunterGunCheck::actAtNight(NightContext& ctx, GameState& /*state*/, Player& owner,
                                 DecisionProvider& provider) {
-    // Currently shootable unless the witch is poisoning this hunter tonight (§2).
-    const bool canShoot = !(ctx.poisonTarget && *ctx.poisonTarget == owner.id());
-    provider.onHunterGunCheck(owner.id(), canShoot);
+    // The hunter cannot shoot if he will die poisoned tonight — by the real witch
+    // OR the mechanic's learned witch (§2). A mechanic learned-guard on the hunter
+    // reflects the poison away (he survives -> can shoot), mirroring the dawn rule
+    // in game.cpp. This runs after all poison is set (night order 43, §3).
+    const int self = owner.id();
+    const bool guardReflects = ctx.mechanicGuardTarget && *ctx.mechanicGuardTarget == self;
+    const bool poisonedByWitch = ctx.poisonTarget && *ctx.poisonTarget == self;
+    const bool poisonedByMechWitch = ctx.mechPoisonTarget && *ctx.mechPoisonTarget == self;
+    const bool canShoot = guardReflects || !(poisonedByWitch || poisonedByMechWitch);
+    provider.onHunterGunCheck(self, canShoot);
 }
 
 void DeathTriggerShoot::onDeath(GameState& state, Player& owner, DecisionProvider& provider,

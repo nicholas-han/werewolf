@@ -167,7 +167,11 @@ public:
 class HunterGunCheck : public Ability, public NightActor {
 public:
     std::string name() const override { return "HunterGunCheck"; }
-    int nightOrder() const override { return 35; }  // after the witch's poison
+    // After ALL poison is set: the real witch (30) AND, on the psychic board, the
+    // mechanic's learned witch (42). Sitting at 43 keeps it right after the witch on
+    // boards without a mechanic, and right after the mechanic block (before the
+    // psychic at 50) on the psychic board, so the gun-check sees every poison (§2/§3).
+    int nightOrder() const override { return 43; }
     std::string nightCue() const override { return "猎人"; }
     void actAtNight(NightContext& ctx, GameState& state, Player& owner,
                     DecisionProvider& provider) override;

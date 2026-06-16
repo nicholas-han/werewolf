@@ -195,6 +195,29 @@ TEST(HunterGunCheck, ReflectsTonightsPoison) {
     EXPECT_FALSE(dp.hunterGunChecks.back().second);
 }
 
+TEST(HunterGunCheck, MechanicWitchPoisonAlsoBlocksShot) {
+    // §2/§3: the gun-check must also see the mechanic's learned-witch poison (it now
+    // runs after the mechanic acts). hunter = seat 7 on the psychic board.
+    GameState s = psychicBoard();
+    HunterGunCheck gc;
+    ScriptedDecisionProvider dp;
+
+    NightContext mechPoison;
+    mechPoison.mechPoisonTarget = 7;  // mechanic's witch copy poisons the hunter
+    gc.actAtNight(mechPoison, s, *s.find(7), dp);
+    ASSERT_EQ(dp.hunterGunChecks.size(), 1u);
+    EXPECT_FALSE(dp.hunterGunChecks.back().second);  // will die poisoned -> cannot shoot
+
+    // Edge: a mechanic learned-guard on the hunter reflects the poison away, so he
+    // survives and can still shoot (mirrors the dawn reflect rule, §2 机械狼).
+    NightContext reflected;
+    reflected.poisonTarget = 7;
+    reflected.poisonSourceId = 6;
+    reflected.mechanicGuardTarget = 7;  // mech-guard protects the hunter -> reflected
+    gc.actAtNight(reflected, s, *s.find(7), dp);
+    EXPECT_TRUE(dp.hunterGunChecks.back().second);
+}
+
 // ---------- M9 Phase 2: learned active abilities (BRD §2) ----------
 
 TEST(MechanicLearned, HunterShotGatedThenPoisonBlocked) {
