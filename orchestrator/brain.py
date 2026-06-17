@@ -140,7 +140,18 @@ class AgentBrain:
         """Parse the model answer into a legal reply field; return (fields, fallback)."""
         qtype = ask["qtype"]
         if qtype == "speak":
-            return {"text": answer.strip()}, False
+            txt = answer.strip()
+            # Tolerate (weak) models that wrap a speak in JSON, e.g.
+            # {"choice":"speak","message":"…"} / {"text":"…"} — show the words, not the JSON.
+            if txt.startswith("{") or txt.startswith("```"):
+                obj = _loads_lenient(txt)
+                if isinstance(obj, dict):
+                    for k in ("message", "text", "speech", "content", "say"):
+                        v = obj.get(k)
+                        if isinstance(v, str) and v.strip():
+                            txt = v.strip()
+                            break
+            return {"text": txt}, False
 
         obj = _loads_lenient(answer)
         if qtype == "confirm":
