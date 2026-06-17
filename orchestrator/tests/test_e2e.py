@@ -39,8 +39,10 @@ class E2ETest(unittest.TestCase):
             orch = self._run(1, 4242, d)
             self.assertIn(orch.result, ("TownWins", "WolfWins"))
 
-            script = os.path.join(d, "god_script.md")
-            trace = os.path.join(d, "trace.jsonl")
+            # each game writes into its own timestamped sub-dir (preserved, not overwritten)
+            self.assertTrue(orch.run_dir.startswith(d))
+            script = os.path.join(orch.run_dir, "god_script.md")
+            trace = os.path.join(orch.run_dir, "trace.jsonl")
             self.assertTrue(os.path.exists(script))
             self.assertTrue(os.path.exists(trace))
 
@@ -74,6 +76,15 @@ class E2ETest(unittest.TestCase):
             orch = self._run(1, 99, d)
             for brain in orch.brains.values():
                 self.assertFalse(any(e.get("vis") == "moderator" for e in brain.view))
+
+
+    def test_each_game_preserved_in_own_dir(self):
+        with tempfile.TemporaryDirectory() as d:
+            o1 = self._run(1, 7, d)
+            o2 = self._run(1, 7, d)  # same board+seed, run again
+            self.assertNotEqual(o1.run_dir, o2.run_dir)  # not overwritten
+            self.assertTrue(os.path.exists(os.path.join(o1.run_dir, "god_script.md")))
+            self.assertTrue(os.path.exists(os.path.join(o2.run_dir, "god_script.md")))
 
 
 if __name__ == "__main__":

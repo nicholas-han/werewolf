@@ -151,8 +151,9 @@ def main() -> None:
 
     orch = run_game(cfg)
     print(f"\n结果：{orch.result}")
-    print(f"复盘 script：{cfg.out_dir}/god_script.md")
-    print(f"训练 trace ：{cfg.out_dir}/trace.jsonl")
+    print(f"本局目录：{orch.run_dir}")
+    print(f"复盘 script：{orch.run_dir}/god_script.md")
+    print(f"训练 trace ：{orch.run_dir}/trace.jsonl")
 
 
 if __name__ == "__main__":

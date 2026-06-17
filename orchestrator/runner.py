@@ -7,6 +7,7 @@ The engine never learns who is human vs AI — that lives entirely here.
 
 from __future__ import annotations
 
+import datetime
 import os
 import pathlib
 import sys
@@ -100,6 +101,7 @@ class Orchestrator:
         self.human: Optional[HumanTerminal] = None
         self.recorder: Optional[Recorder] = None
         self.result: Optional[str] = None
+        self.run_dir: Optional[str] = None  # per-game output dir (set at game_start)
 
     def _make_llm(self, seat: int) -> LlmClient:
         if self.cfg.llm_factory is not None:
@@ -110,11 +112,15 @@ class Orchestrator:
                             num_ctx=self.cfg.num_ctx, timeout=self.cfg.request_timeout)
 
     def _setup_seats(self, msg: dict) -> None:
-        os.makedirs(self.cfg.out_dir, exist_ok=True)
-        game_id = f"board{self.cfg.board}-seed{self.cfg.seed}"
+        # Each game gets its own timestamped run dir, so past scripts are preserved
+        # (a new script per game instead of overwriting one fixed file).
+        stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+        game_id = f"{stamp}_board{self.cfg.board}_seed{self.cfg.seed}"
+        self.run_dir = os.path.join(self.cfg.out_dir, game_id)
+        os.makedirs(self.run_dir, exist_ok=True)
         self.recorder = Recorder(
-            os.path.join(self.cfg.out_dir, "god_script.md"),
-            os.path.join(self.cfg.out_dir, "trace.jsonl"),
+            os.path.join(self.run_dir, "god_script.md"),
+            os.path.join(self.run_dir, "trace.jsonl"),
             game_id,
         )
         self.recorder.on_game_start(msg)
