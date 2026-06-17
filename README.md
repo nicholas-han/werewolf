@@ -2,7 +2,7 @@
 
 一个用 C++ 写的**狼人杀规则引擎 + 法官控制台**。目标有两个：做一个能主持整局的工具，并借此提炼一套清晰的「规则引擎」架构（规则数据化、流程显式化、I/O 与逻辑解耦）。
 
-完整的规则与架构基准见 [`claude.md`](claude.md)（项目 BRD）。
+完整的规则与架构基准见 [`docs/werewolf_business_requirement_document.md`](docs/werewolf_business_requirement_document.md)（项目 BRD）。
 
 ## 当前能力
 
@@ -21,7 +21,7 @@
 ```bash
 cmake -B build && cmake --build build      # 构建
 ./build/werewolf                           # 启动法官控制台
-ctest --test-dir build --output-on-failure # 跑测试（109 个用例）
+ctest --test-dir build --output-on-failure # 跑测试（131 个用例）
 ```
 
 ## 怎么用（法官视角）
@@ -31,7 +31,7 @@ ctest --test-dir build --output-on-failure # 跑测试（109 个用例）
 3. 之后按提示主持每一步：程序会念出「天黑请闭眼 / 狼人请睁眼 …」，问你**玩家做了什么**（狼刀谁、预言家验谁、女巫救/毒、投票放逐谁……），到关键处停下等你按回车（公布死讯、遗言）。开启发言记录时，会在发言/遗言环节让你录入文本。
 4. 引擎自动结算死亡、连锁触发（猎人开枪）、警长竞选与移交、胜负判定，最后给出**游戏结束：好人/狼人胜利**；若开了发言记录，再打印**复盘：发言记录**。
 
-> **信息可见性**（§11）：单屏法官把信息打在同屏（法官本就全知）；**传递游玩**用清屏 + 私密交接，在一台设备上做到「每人只看自己信息」。多设备**真·联机**仍属后续形态（见 [`claude.md`](claude.md) 路线图）。
+> **信息可见性**（§11）：单屏法官把信息打在同屏（法官本就全知）；**传递游玩**用清屏 + 私密交接，在一台设备上做到「每人只看自己信息」。多设备**真·联机**仍属后续形态（见 [`docs/werewolf_business_requirement_document.md`](docs/werewolf_business_requirement_document.md) 路线图）。
 
 ## 架构一览
 
@@ -42,11 +42,11 @@ ctest --test-dir build --output-on-failure # 跑测试（109 个用例）
 - `io/` — `DecisionProvider` 接口 + `Scripted`（测试）/ `Console`（真人）/ `PassAndPlay`（单设备多人）实现；以及按玩家路由：`PlayerChannel`（每玩家通道）+ `RoutingDecisionProvider`，通道实现 `Scripted`/`Bot`（真·联机的 `Network`、AI 的 `Agent` 留待后续）。
 - `app/` — `main.cpp` 命令行入口。
 
-设计要点：**角色用「浅继承 + 能力组合」**（加角色≈挑选/新写能力再拼装）；**胜负按阵营全局计数**；**信息可见性**严格区分「真相层 GameState」与「玩家视图」。详见 [`claude.md`](claude.md) 第二部分。
+设计要点：**角色用「浅继承 + 能力组合」**（加角色≈挑选/新写能力再拼装）；**胜负按阵营全局计数**；**信息可见性**严格区分「真相层 GameState」与「玩家视图」。详见 [`docs/werewolf_business_requirement_document.md`](docs/werewolf_business_requirement_document.md) 第二部分。
 
 ## 路线图（摘要）
 
-法官单机工具（已完成）→ 随机发牌（已完成）→ 单设备传递游玩（已完成）→ 发言记录与复盘（已完成）→ 按玩家路由地基 + AI 自动对战演示（已完成）→ 拍刀阶段 C 自动最优搜索 → 真·联机（加一个 `NetworkChannel` + 真人客户端）→ 接入 AI agent 玩家（加一个 `AgentChannel`）。
+法官单机工具（已完成）→ 随机发牌（已完成）→ 单设备传递游玩（已完成）→ 发言记录与复盘（已完成）→ 按玩家路由地基 + AI 自动对战演示（已完成）→ **AI agent 玩家（M15：进程外 sidecar ＝ 引擎 JSON 协议 + Python orchestrator + 本地模型；见 [`docs/ai_agents_design.md`](docs/ai_agents_design.md) 与 [`orchestrator/`](orchestrator/)）** → 拍刀阶段 C 自动最优搜索 → 真·联机（`NetworkChannel` + 真人客户端）。
 
 ## 开发约定
 

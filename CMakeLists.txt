@@ -23,6 +23,7 @@ add_library(werewolf_core
     src/io/pass_and_play_decision_provider.cpp
     src/io/routing_decision_provider.cpp
     src/io/bot_channel.cpp
+    src/io/json_decision_provider.cpp
 )
 target_include_directories(werewolf_core PUBLIC src)
 target_compile_features(werewolf_core PUBLIC cxx_std_20)
@@ -83,6 +84,9 @@ if(WEREWOLF_BUILD_TESTS)
     add_executable(rules_m13_test tests/rules_m13_test.cpp)
     target_link_libraries(rules_m13_test PRIVATE werewolf_core GTest::gtest_main)
 
+    add_executable(json_protocol_test tests/json_protocol_test.cpp)
+    target_link_libraries(json_protocol_test PRIVATE werewolf_core GTest::gtest_main)
+
     include(GoogleTest)
     gtest_discover_tests(core_test)
     gtest_discover_tests(flow_test)
@@ -97,4 +101,5 @@ if(WEREWOLF_BUILD_TESTS)
     gtest_discover_tests(speech_log_test)
     gtest_discover_tests(routing_test)
     gtest_discover_tests(rules_m13_test)
+    gtest_discover_tests(json_protocol_test)
 endif()

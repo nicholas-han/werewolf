@@ -29,6 +29,29 @@ const BoardConfig kKillSide{};  // defaults: KillSide
 
 }  // namespace
 
+// §2/§7.2 per-speech interrupts (default off): a wolf may自爆 between day speeches,
+// ending the day early — instead of only at the single post-speech window.
+TEST(SpeechInterrupts, WolfSelfDestructsMidDaySpeeches) {
+    ScriptedDecisionProvider provider;
+    provider.nightKills = {std::nullopt};  // peaceful night 1
+    provider.speeches = {"A", "B", "C", "D", "E", "F", "G", "H", "I"};
+    // Nobody runs for sheriff (default false) -> no election self-destruct checks.
+    // chooseSelfDestruct is polled after each day speech: pass, then P1 (a wolf) blows up.
+    provider.selfDestructs = {std::nullopt, 1};
+
+    Game game(makeBoard9_SeerWitchHunter(), provider);
+    game.setSpeechInterrupts(true);
+    game.run();
+
+    const GameState& st = game.state();
+    EXPECT_TRUE(st.find(1)->hasDeathCause(DeathCause::BlownUp));  // wolf self-destructed
+    int day1Statements = 0;
+    for (const auto& e : st.speeches) {
+        if (e.day == 1 && e.kind == SpeechKind::Statement) ++day1Statements;
+    }
+    EXPECT_EQ(day1Statements, 2);  // day ended after the 2nd speech, not all 9
+}
+
 // ---------- WinCondition snapshots (BRD §4) ----------
 
 TEST(WinCondition, FreshGameIsOngoing) {

@@ -15,18 +15,17 @@ Settlement::Settlement(GameState& state, const BoardConfig& config, DecisionProv
     : state_(state), config_(config), provider_(provider) {}
 
 void Settlement::announceDeath(const Player& p) {
-    // A self-destruct is announced as 自爆 only — any swallowed night cause stays
-    // hidden (§2 自爆吞毒: the witch's poison is concealed by the blast).
-    if (p.hasDeathCause(DeathCause::BlownUp)) {
-        provider_.notify(txt::out(p.name(), txt::cause(DeathCause::BlownUp)));
-        return;
+    // §11: only PUBLIC-event causes are ever named — 自爆 (and it swallows any night
+    // cause, §2 自爆吞毒), 放逐 (public vote), 枪杀 (public hunter/wolf-gun shot). A
+    // pure night death (狼杀/毒杀) is announced as just「出局」so nobody can tell knife
+    // from poison. Priority: 自爆 > 放逐 > 枪杀.
+    for (DeathCause pub : {DeathCause::BlownUp, DeathCause::Exiled, DeathCause::Shot}) {
+        if (p.hasDeathCause(pub)) {
+            provider_.notify(txt::out(p.name(), txt::cause(pub)));
+            return;
+        }
     }
-    std::string causes;
-    for (DeathCause c : p.deathCauses()) {
-        if (!causes.empty()) causes += "+";
-        causes += txt::cause(c);
-    }
-    provider_.notify(txt::out(p.name(), causes));
+    provider_.notify(txt::outNoCause(p.name()));  // night death: cause hidden
 }
 
 void Settlement::collectLastWords(Player& dead) {

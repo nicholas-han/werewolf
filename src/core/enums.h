@@ -22,9 +22,9 @@ enum class DeathCause { Killed, Poisoned, Exiled, Shot, BlownUp };
 enum class Phase { Night, Day };
 
 // Kind of spoken record (BRD roadmap §4 发言记录). Statement = the daytime
-// speaking phase; LastWords = 遗言 said on death. Campaign speeches are skipped
-// by the engine today and not recorded.
-enum class SpeechKind { Statement, LastWords };
+// speaking phase (campaign pitches reuse it); LastWords = 遗言 said on death;
+// WolfChat = wolves' night chat (BRD §5.4, relayed only to wolves).
+enum class SpeechKind { Statement, LastWords, WolfChat };
 
 // Concrete roles (BRD §3). 9-player: Werewolf/Seer/Witch/Hunter/Civilian.
 // 12-player guard board adds Guardian (守卫) and WolfGun (狼枪).
@@ -86,6 +86,7 @@ constexpr std::string_view to_string(SpeechKind k) {
     switch (k) {
         case SpeechKind::Statement: return "Statement";
         case SpeechKind::LastWords: return "LastWords";
+        case SpeechKind::WolfChat: return "WolfChat";
     }
     return "?";
 }

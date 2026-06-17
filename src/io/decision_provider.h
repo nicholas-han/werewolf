@@ -170,9 +170,24 @@ public:
         (void)state; (void)speakerId; (void)kind; (void)day; return "";
     }
 
+    // Wolf-team night chat (BRD §5.4, AI agents): collect `speakerId`'s private
+    // chat; the provider relays it to the other open wolves (`openWolfIds`). No
+    // mechanical effect (like daytime speech). Default no-op so non-AI providers
+    // run no wolf chat at all (zero behaviour change).
+    virtual std::string collectWolfChat(const GameState& state, int speakerId,
+                                        const std::vector<int>& openWolfIds, int round) {
+        (void)state; (void)speakerId; (void)openWolfIds; (void)round; return "";
+    }
+
     // Pacing hook for a human moderator (BRD M5 ⑤): block until the operator is
     // ready to continue. No-op for scripted/bot providers.
     virtual void pause(const std::string& note) { (void)note; }
+
+    // Called by the engine right after it enters a new phase (Night/Day), BEFORE
+    // any banner/death narration. Lets a provider that tags events with day/phase
+    // refresh that metadata up front — otherwise transition narration emitted via
+    // notify() (which carries no GameState) would inherit the previous phase's tag.
+    virtual void onPhaseEnter(const GameState& state) { (void)state; }
 
     // Public broadcast for UI / observers / logging — everyone may see it (BRD
     // §11): banners, death announcements, vote tallies, etc.

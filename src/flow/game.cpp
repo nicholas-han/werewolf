@@ -214,17 +214,54 @@ std::vector<int> Game::cueSpeechOrder(int nightDeathCount, int singleDeadSeat) {
     return order;
 }
 
-void Game::collectDaySpeeches(const std::vector<int>& orderSeats) {
+std::optional<int> Game::collectDaySpeeches(const std::vector<int>& orderSeats) {
     for (int seat : orderSeats) {
         const Player* p = state_.find(seat);
         if (p == nullptr || !p->isAlive()) continue;
         std::string text =
             provider_.collectSpeech(state_, p->id(), SpeechKind::Statement, state_.day);
         state_.recordSpeech(state_.day, SpeechKind::Statement, p->id(), seat, std::move(text));
+        // §2 per-speech interrupt: after each speech a wolf may自爆 (ends the day).
+        if (speechInterrupts_ && board_.config.blownUpEnabled) {
+            const std::vector<int> wolves = aliveWolfIds();
+            if (!wolves.empty()) {
+                if (std::optional<int> sd = provider_.chooseSelfDestruct(state_, wolves)) return sd;
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+void Game::runWolfChat() {
+    // §5.4: collect each open wolf's night chat (mechanic doesn't meet the pack).
+    // The provider relays it privately to the other wolves; non-AI providers no-op.
+    std::vector<int> open;
+    for (const Player& p : state_.players) {
+        if (p.isAlive() && p.faction() == Faction::Wolf &&
+            p.role().kind() != RoleKind::MechanicWolf) {
+            open.push_back(p.id());
+        }
+    }
+    if (open.empty()) return;
+    // Up to wolfChatRounds_ rounds; natural收尾: stop once a whole round is all-pass
+    // (the provider returns "" when a wolf passes / has nothing to add).
+    for (int round = 1; round <= wolfChatRounds_; ++round) {
+        bool anySpoke = false;
+        for (int w : open) {
+            const Player* wp = state_.find(w);
+            std::string text = provider_.collectWolfChat(state_, w, open, round);
+            if (!text.empty()) {
+                anySpoke = true;
+                state_.recordSpeech(state_.day, SpeechKind::WolfChat, w, wp ? wp->seat() : 0,
+                                    std::move(text));
+            }
+        }
+        if (!anySpoke) break;  // nobody added anything this round -> discussion over
     }
 }
 
 GameResult Game::runNight() {
+    provider_.onPhaseEnter(state_);  // refresh day/phase tags before any narration
     provider_.notify(txt::nightBanner(state_.day));
 
     for (Player& p : state_.players) {
@@ -256,12 +293,19 @@ GameResult Game::runNight() {
     // The cue is emitted for every group (alive or not); only living owners act.
     NightContext ctx;
     std::string openCue;
+    bool wolfChatDone = false;
     for (const Act& a : acts) {
         const std::string cue = a.actor->nightCue();
         if (cue != openCue) {
             if (!openCue.empty()) provider_.notify(txt::closeEyes(openCue));
             provider_.notify(txt::openEyes(cue));
             openCue = cue;
+            // §5.4: open wolves chat AFTER "狼人请睁眼", BEFORE the knife. "狼人" is the
+            // open-wolf NightKill cue (role_abilities.h); the mechanic uses "机械狼".
+            if (cue == "狼人" && !wolfChatDone) {
+                runWolfChat();
+                wolfChatDone = true;
+            }
         }
         if (a.owner->isAlive()) a.actor->actAtNight(ctx, state_, *a.owner, provider_);
     }
@@ -446,11 +490,16 @@ Game::ElectionOutcome Game::runDeferredElection() {
     provider_.notify(txt::sheriffVoteHeader());
     provider_.notify(txt::sheriffCandidates(joinNames(state_, candidates)));
     std::map<int, double> counts;
+    std::string ballots;
     for (int v : alive) {
         if (contains(candidates, v)) continue;
         std::optional<int> pick = provider_.chooseSheriffVote(state_, v, candidates);
-        if (pick && contains(candidates, *pick)) counts[*pick] += 1.0;
+        if (!(pick && contains(candidates, *pick))) pick.reset();
+        if (pick) counts[*pick] += 1.0;
+        if (!ballots.empty()) ballots += "、";
+        ballots += nameOrId(state_, v) + (pick ? ("→" + nameOrId(state_, *pick)) : " 弃票");
     }
+    provider_.notify(txt::voteBallots(ballots));
     provider_.notify(txt::sheriffVotes(fmtVotes(state_, counts)));
     std::vector<int> leaders = topCandidates(counts);
     if (leaders.size() == 1) {
@@ -486,24 +535,49 @@ Game::ElectionOutcome Game::runSheriffElection() {
         return {GameResult::Ongoing, false};
     }
 
-    // (Candidate speeches are cosmetic and skipped.)
+    // Announce who stood for sheriff (§7.2, like the vote reveal): blind registration,
+    // then publicly list the runners before speeches.
+    provider_.notify(txt::sheriffRunners(joinNames(state_, candidates)));
 
-    // Withdraw / self-destruct window (§7.2-4). A wolf self-destruct interrupts
-    // the election (§7.4); on day 2 a second interruption kills the badge (§7.5).
-    // 吞毒-eligible: pending (un-announced) night-dead wolves may also自爆 (§2).
-    {
+    // Candidate speeches (BRD §7.2-2), in registration order. With speech interrupts
+    // on, after each pitch a wolf may自爆（§7.4 中断竞选）且候选人可退水（§7.2-3）;
+    // off = a single退水/自爆 window after all speeches (§7.2-4). 吞毒-eligible:
+    // pending (un-announced) night-dead wolves may also自爆 (§2).
+    std::vector<int> remaining = candidates;
+    for (int cid : candidates) {
+        if (speechInterrupts_ && !contains(remaining, cid)) continue;  // already withdrew
+        const Player* cp = state_.find(cid);
+        if (cp == nullptr) continue;
+        std::string pitch = provider_.collectSpeech(state_, cid, SpeechKind::Statement, state_.day);
+        state_.recordSpeech(state_.day, SpeechKind::Statement, cid, cp->seat(), std::move(pitch));
+        if (!speechInterrupts_) continue;
+        {
+            const std::vector<int> wolves = selfDestructWolfCandidates();
+            if (!wolves.empty()) {
+                if (std::optional<int> sd = provider_.chooseSelfDestruct(state_, wolves)) {
+                    return resolveElectionSelfDestruct(*sd, /*pkLeaders=*/{}, /*wasDeferred=*/false);
+                }
+            }
+        }
+        std::vector<int> still;
+        for (int id : remaining) {
+            if (!provider_.chooseWithdraw(state_, id)) still.push_back(id);
+        }
+        remaining = std::move(still);
+        if (remaining.size() <= 1) break;  // resolved by the shared block below
+    }
+
+    if (!speechInterrupts_) {  // single退水/自爆 window after all speeches (§7.2-4)
         const std::vector<int> wolves = selfDestructWolfCandidates();
         if (!wolves.empty()) {
             if (std::optional<int> sd = provider_.chooseSelfDestruct(state_, wolves)) {
                 return resolveElectionSelfDestruct(*sd, /*pkLeaders=*/{}, /*wasDeferred=*/false);
             }
         }
-    }
-
-    // Withdrawals (§7.2-3).
-    std::vector<int> remaining;
-    for (int id : candidates) {
-        if (!provider_.chooseWithdraw(state_, id)) remaining.push_back(id);
+        remaining.clear();
+        for (int id : candidates) {
+            if (!provider_.chooseWithdraw(state_, id)) remaining.push_back(id);
+        }
     }
 
     electionResolved_ = true;
@@ -522,10 +596,15 @@ Game::ElectionOutcome Game::runSheriffElection() {
     // Vote: only non-candidates vote (§7.2-5). Withdrawn candidates abstain too.
     auto tallySheriff = [&](const std::vector<int>& voters, const std::vector<int>& cands) {
         std::map<int, double> counts;
+        std::string ballots;  // who voted whom (revealed together after collection)
         for (int v : voters) {
             std::optional<int> pick = provider_.chooseSheriffVote(state_, v, cands);
-            if (pick && contains(cands, *pick)) counts[*pick] += 1.0;
+            if (!(pick && contains(cands, *pick))) pick.reset();
+            if (pick) counts[*pick] += 1.0;
+            if (!ballots.empty()) ballots += "、";
+            ballots += nameOrId(state_, v) + (pick ? ("→" + nameOrId(state_, *pick)) : " 弃票");
         }
+        provider_.notify(txt::voteBallots(ballots));
         return counts;
     };
 
@@ -602,17 +681,30 @@ std::optional<int> Game::resolveExile() {
 
     // Round 1: the sheriff votes via 归票 (1.5 single / 1.0 PK), others weight 1 (§7.1).
     std::map<int, double> counts;
-    for (int v : alive) {
-        if (state_.sheriffId && *state_.sheriffId == v) {
-            SheriffBallot b = provider_.chooseSheriffExileBallot(state_, v, alive);
-            if (b.target && contains(alive, *b.target)) {
-                counts[*b.target] += b.consolidateSingle ? 1.5 : 1.0;
-            }
-        } else {
-            std::optional<int> pick = provider_.chooseVote(state_, v, alive);
-            if (pick && contains(alive, *pick)) counts[*pick] += 1.0;
-        }
+    std::string ballots;  // who voted whom (revealed together AFTER collection, §6)
+    auto record = [&](std::string& acc, int voter, std::optional<int> target, bool sheriff) {
+        if (!acc.empty()) acc += "、";
+        acc += nameOrId(state_, voter) + (sheriff ? "(警长)" : "");
+        acc += target ? ("→" + nameOrId(state_, *target)) : " 弃票";
+    };
+    // §7.1: the sheriff 归票 FIRST and OPENLY, so everyone else votes knowing it.
+    if (state_.sheriffId && contains(alive, *state_.sheriffId)) {
+        const int s = *state_.sheriffId;
+        SheriffBallot b = provider_.chooseSheriffExileBallot(state_, s, alive);
+        std::optional<int> t = (b.target && contains(alive, *b.target)) ? b.target : std::nullopt;
+        if (t) counts[*t] += b.consolidateSingle ? 1.5 : 1.0;
+        provider_.notify(txt::sheriffExileBallot(nameOrId(state_, s), b.consolidateSingle,
+                                                 t ? nameOrId(state_, *t) : std::string()));
+        record(ballots, s, t, true);
     }
+    for (int v : alive) {
+        if (state_.sheriffId && *state_.sheriffId == v) continue;  // sheriff already 归票
+        std::optional<int> pick = provider_.chooseVote(state_, v, alive);
+        if (!(pick && contains(alive, *pick))) pick.reset();
+        if (pick) counts[*pick] += 1.0;
+        record(ballots, v, pick, false);
+    }
+    provider_.notify(txt::voteBallots(ballots));
     provider_.notify(txt::firstRoundVotes(fmt(counts)));
     std::vector<int> leaders = topCandidates(counts);
 
@@ -634,10 +726,14 @@ std::optional<int> Game::resolveExile() {
         if (!contains(leaders, id)) runoffVoters.push_back(id);
     }
     std::map<int, double> counts2;
+    std::string ballots2;
     for (int v : runoffVoters) {
         std::optional<int> pick = provider_.chooseVote(state_, v, leaders);
-        if (pick && contains(leaders, *pick)) counts2[*pick] += 1.0;
+        if (!(pick && contains(leaders, *pick))) pick.reset();
+        if (pick) counts2[*pick] += 1.0;
+        record(ballots2, v, pick, false);
     }
+    provider_.notify(txt::voteBallots(ballots2));
     provider_.notify(txt::runoffVotes(fmt(counts2)));
     std::vector<int> leaders2 = topCandidates(counts2);
 
@@ -651,6 +747,7 @@ std::optional<int> Game::resolveExile() {
 }
 
 GameResult Game::runDay() {
+    provider_.onPhaseEnter(state_);  // refresh day/phase tags before any narration
     provider_.notify(txt::dayBanner(state_.day));
     provider_.notifyModerator(moderatorStatus());  // ④ status board (god-view, §11)
 
@@ -677,10 +774,12 @@ GameResult Game::runDay() {
     // 发言顺序 cue (③ §7.1.2): single death -> 死左/死右; multi / peaceful -> from sheriff.
     const std::vector<int> speakOrder = cueSpeechOrder(nightDeathCount, singleDeadSeat);
     provider_.notify(txt::speechPhase());
-    collectDaySpeeches(speakOrder);  // §4 发言记录
-
-    // Daytime self-destruct during 发言 (§2): day ends immediately, no vote.
-    if (board_.config.blownUpEnabled) {
+    // §2 自爆 during 发言：interrupts on -> per-speech (collectDaySpeeches returns the
+    // self-destructing wolf); off -> one window after all speeches.
+    if (std::optional<int> sd = collectDaySpeeches(speakOrder)) {  // §4 发言记录 (+ 中断)
+        return settlement_.apply({{*sd, DeathCause::BlownUp}});
+    }
+    if (!speechInterrupts_ && board_.config.blownUpEnabled) {
         const std::vector<int> wolves = aliveWolfIds();
         if (!wolves.empty()) {
             if (std::optional<int> sd = provider_.chooseSelfDestruct(state_, wolves)) {
