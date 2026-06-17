@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import sys
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
@@ -133,6 +134,10 @@ class Orchestrator:
     def _answer(self, ask: dict) -> dict:
         seat = ask["seat"]
         if seat in self.brains:
+            # Heartbeat: AI decisions can be silent for tens of seconds each (esp. the
+            # sheriff "上警?" polling), so show the human it's working, not frozen.
+            prompt = (ask.get("prompt") or ask.get("kind") or "")[:24]
+            print(f"· P{seat} 思考中…（{prompt}）", file=sys.stderr, flush=True)
             reply, trace = self.brains[seat].answer(ask)
             assert self.recorder is not None
             self.recorder.on_decision(ask, reply, trace)
