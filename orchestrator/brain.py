@@ -23,6 +23,18 @@ _FACTION_GOAL = {
     "Town": "好人阵营：找出并票出所有狼人。",
 }
 
+_ROLE_HINTS = {
+    "Werewolf": "藏好狼身份、配合队友误导好人；可悍跳神职、对跳、栽赃带节奏。",
+    "WolfGun": "狼（带枪）：藏身份配合狼队；自爆或被票出时可开枪带人。",
+    "MechanicWolf": "机械狼：独立行动、不与狼队见面，藏好身份。",
+    "Seer": "预言家：每晚验人；白天敢起跳，公布查杀/金水带队找狼。",
+    "Witch": "女巫：有解药/毒药；谨慎用药与跳身份，关键时毒杀。",
+    "Hunter": "猎人：出局可开枪带走一人；发言有威慑，必要时亮枪。",
+    "Guardian": "守卫：每晚守护一人（不可连守），隐蔽身份保关键神职。",
+    "Psychic": "通灵师：每晚查具体身份；带队精准找狼。",
+    "Civilian": "平民：靠逻辑找狼、保神职、理性投票。",
+}
+
 
 def _split_think(text: str) -> tuple[str, str]:
     """Return (reasoning, answer): strip a leading <think>…</think> (R1)."""
@@ -43,6 +55,8 @@ class AgentBrain:
     role: Optional[str] = None      # set from the private deal event
     faction: Optional[str] = None
     view: list[dict] = field(default_factory=list)   # events visible to this seat
+    roster: dict[int, str] = field(default_factory=dict)  # seat -> name (for 局势摘要)
+    dead: set[int] = field(default_factory=set)           # seats observed out (public)
 
     # --- view (memory) ---
     def observe(self, event: dict) -> None:
@@ -51,6 +65,23 @@ class AgentBrain:
             data = event.get("data", {})
             self.role = data.get("role", self.role)
             self.faction = data.get("faction", self.faction)
+        elif event.get("etype") == "narration" and event.get("vis") == "public":
+            # Track who's out from the public "<name> 出局" announcements (name+space is
+            # unambiguous: "P1 出局" ⊄ "P12 出局"); only scan narration, not speeches.
+            text = event.get("text", "")
+            for seat, name in self.roster.items():
+                if seat not in self.dead and f"{name} 出局" in text:
+                    self.dead.add(seat)
+
+    def _situation(self) -> str:
+        if not self.roster:
+            return ""
+        alive = [self.roster[s] for s in sorted(self.roster) if s not in self.dead]
+        out = [self.roster[s] for s in sorted(self.roster) if s in self.dead]
+        line = "【局势】存活：" + "、".join(alive)
+        if out:
+            line += "｜已出局：" + "、".join(out)
+        return line
 
     # --- decision ---
     def answer(self, ask: dict) -> tuple[dict, dict]:
@@ -62,7 +93,8 @@ class AgentBrain:
 
         attempts: list[dict] = []
         t0 = time.monotonic()
-        comp = self.llm.complete(system, messages, schema=schema)
+        comp = self.llm.complete(system, messages, schema=schema,
+                                 temperature=0.5 if qtype == "speak" else 0.6)
         latency_ms = int((time.monotonic() - t0) * 1000)
         reasoning, answer = _split_think(comp.text)
         parsed, fallback = self._parse(ask, answer)
@@ -94,9 +126,12 @@ class AgentBrain:
     def _system_prompt(self) -> str:
         goal = _FACTION_GOAL.get(self.faction or "", "帮你所在的阵营获胜。")
         lines = [
-            f"你正在玩狼人杀（9 人局）。你是玩家 P{self.seat}，身份：{self.role or '（待告知）'}。",
+            f"你正在玩狼人杀。你是玩家 P{self.seat}，身份：{self.role or '（待告知）'}。",
             f"目标：{goal}",
         ]
+        hint = _ROLE_HINTS.get(self.role or "")
+        if hint:
+            lines.append(f"打法要点：{hint}")
         if self.persona:
             lines.append(f"风格：{self.persona}")
         lines += [
@@ -124,8 +159,11 @@ class AgentBrain:
 
         day = ask.get("day")
         phase = "夜晚" if ask.get("phase") == "Night" else "白天"
-        body = ["【你已知的信息（按时间顺序）】"] + (log or ["（暂无）"]) + [
-            "", f"【现在：第 {day} 天 · {phase}】需要你：{ask.get('prompt', '')}"]
+        body = ["【你已知的信息（按时间顺序）】"] + (log or ["（暂无）"])
+        sit = self._situation()
+        if sit:
+            body += ["", sit]
+        body += ["", f"【现在：第 {day} 天 · {phase}】需要你：{ask.get('prompt', '')}"]
 
         qtype = ask["qtype"]
         if qtype == "choose":
@@ -169,18 +207,15 @@ class AgentBrain:
         """Parse the model answer into a legal reply field; return (fields, fallback)."""
         qtype = ask["qtype"]
         if qtype == "speak":
-            txt = answer.strip()
-            # Tolerate (weak) models that wrap a speak in JSON, e.g.
-            # {"choice":"speak","message":"…"} / {"text":"…"} — show the words, not the JSON.
-            if txt.startswith("{") or txt.startswith("```"):
-                obj = _loads_lenient(txt)
-                if isinstance(obj, dict):
-                    for k in ("speech", "speak", "message", "text", "content", "say"):
-                        v = obj.get(k)
-                        if isinstance(v, str) and v.strip():
-                            txt = v.strip()
-                            break
-            return {"text": txt}, False
+            # Recover the speech from ANY JSON wrapping (```fences / meta-prefix /
+            # "speak" or "speech" key) so the god-script is always clean, uniform text.
+            obj = _loads_lenient(answer)
+            if isinstance(obj, dict):
+                for k in ("speech", "speak", "message", "text", "content", "say"):
+                    v = obj.get(k)
+                    if isinstance(v, str) and v.strip():
+                        return {"text": v.strip()}, False
+            return {"text": answer.strip()}, False
 
         obj = _loads_lenient(answer)
         if qtype == "confirm":

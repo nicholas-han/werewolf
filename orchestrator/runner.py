@@ -118,6 +118,7 @@ class Orchestrator:
             game_id,
         )
         self.recorder.on_game_start(msg)
+        roster = {s["seat"]: s["name"] for s in msg.get("seats", [])}
         for s in msg.get("seats", []):
             seat, name = s["seat"], s["name"]
             if seat == self.cfg.human_seat:
@@ -125,7 +126,7 @@ class Orchestrator:
             else:
                 self.brains[seat] = AgentBrain(
                     seat=seat, name=name, llm=self._make_llm(seat),
-                    persona=self.cfg.personas.get(seat, ""),
+                    persona=self.cfg.personas.get(seat, ""), roster=roster,
                 )
 
     def _route_event(self, ev: dict) -> None:

@@ -60,5 +60,22 @@ class BrainParseTest(unittest.TestCase):
         self.assertTrue(tr["fallback"])
 
 
+    def test_speak_extracts_from_fenced_json_with_meta(self):
+        # god-script consistency: meta-prefix + ```json fence + "speak" key -> clean text
+        out = '好的，作为P8……\n```json\n{"speak": "我跳预言家，验 P3 金水"}\n```'
+        b = _brain(out)
+        reply, _ = b.answer({"t": "ask", "id": 1, "seat": 8, "qtype": "speak", "kind": "Statement"})
+        self.assertEqual(reply["text"], "我跳预言家，验 P3 金水")
+
+    def test_situation_tracks_public_deaths_only(self):
+        b = AgentBrain(seat=2, name="P2", llm=StubLlm(""), roster={1: "P1", 2: "P2", 3: "P3"})
+        b.observe({"vis": "public", "etype": "narration", "text": "P1 出局（放逐）"})
+        b.observe({"vis": "public", "etype": "speech", "text": "P3 出局后我们就赢了"})  # speech ≠ death
+        self.assertEqual(b.dead, {1})  # only P1; the speech mentioning "P3 出局" must not count
+        sit = b._situation()
+        self.assertIn("已出局", sit)
+        self.assertIn("P1", sit)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
