@@ -86,6 +86,8 @@ inline std::string runoffStillTie() { return "  决胜轮仍平票 → 本轮无
 inline std::string electionBegin() { return "【警长竞选】开始"; }
 inline std::string electionDeferred() { return "【警长竞选】顺延，仅投票（无发言）"; }
 inline std::string sheriffCandidates(const std::string& names) { return "上警候选人：" + names; }
+// Announced after blind registration (§7.2): who stood for sheriff (like the vote reveal).
+inline std::string sheriffRunners(const std::string& names) { return "  上警竞选警长：" + names; }
 inline std::string sheriffVoteHeader() { return "【警长投票】（仅未上警玩家投票）"; }
 inline std::string sheriffVotes(const std::string& body) { return "  警长票数：" + body; }
 inline std::string sheriffRunoffTie(const std::string& names) {

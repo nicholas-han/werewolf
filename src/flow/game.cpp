@@ -489,11 +489,16 @@ Game::ElectionOutcome Game::runDeferredElection() {
     provider_.notify(txt::sheriffVoteHeader());
     provider_.notify(txt::sheriffCandidates(joinNames(state_, candidates)));
     std::map<int, double> counts;
+    std::string ballots;
     for (int v : alive) {
         if (contains(candidates, v)) continue;
         std::optional<int> pick = provider_.chooseSheriffVote(state_, v, candidates);
-        if (pick && contains(candidates, *pick)) counts[*pick] += 1.0;
+        if (!(pick && contains(candidates, *pick))) pick.reset();
+        if (pick) counts[*pick] += 1.0;
+        if (!ballots.empty()) ballots += "、";
+        ballots += nameOrId(state_, v) + (pick ? ("→" + nameOrId(state_, *pick)) : " 弃票");
     }
+    provider_.notify(txt::voteBallots(ballots));
     provider_.notify(txt::sheriffVotes(fmtVotes(state_, counts)));
     std::vector<int> leaders = topCandidates(counts);
     if (leaders.size() == 1) {
@@ -528,6 +533,10 @@ Game::ElectionOutcome Game::runSheriffElection() {
         provider_.notify(txt::badgeLostEveryoneRan());
         return {GameResult::Ongoing, false};
     }
+
+    // Announce who stood for sheriff (§7.2, like the vote reveal): blind registration,
+    // then publicly list the runners before speeches.
+    provider_.notify(txt::sheriffRunners(joinNames(state_, candidates)));
 
     // Candidate speeches (BRD §7.2-2), in registration order. With speech interrupts
     // on, after each pitch a wolf may自爆（§7.4 中断竞选）且候选人可退水（§7.2-3）;
@@ -586,10 +595,15 @@ Game::ElectionOutcome Game::runSheriffElection() {
     // Vote: only non-candidates vote (§7.2-5). Withdrawn candidates abstain too.
     auto tallySheriff = [&](const std::vector<int>& voters, const std::vector<int>& cands) {
         std::map<int, double> counts;
+        std::string ballots;  // who voted whom (revealed together after collection)
         for (int v : voters) {
             std::optional<int> pick = provider_.chooseSheriffVote(state_, v, cands);
-            if (pick && contains(cands, *pick)) counts[*pick] += 1.0;
+            if (!(pick && contains(cands, *pick))) pick.reset();
+            if (pick) counts[*pick] += 1.0;
+            if (!ballots.empty()) ballots += "、";
+            ballots += nameOrId(state_, v) + (pick ? ("→" + nameOrId(state_, *pick)) : " 弃票");
         }
+        provider_.notify(txt::voteBallots(ballots));
         return counts;
     };
 
