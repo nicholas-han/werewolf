@@ -108,21 +108,46 @@ class AgentBrain:
         return "\n".join(lines)
 
     def _render(self, ask: dict) -> list[dict]:
-        log = []
+        # Day/phase-segmented log so the model tracks the timeline (not a flat blob)
+        # and can tell what's NEW today vs. what it already said.
+        log: list[str] = []
+        cur = None
         for e in self.view:
-            tag = ""
-            if e.get("vis") == "private":
-                tag = "[私] "
+            day, phase = e.get("day"), e.get("phase")
+            if day and (day, phase) != cur:
+                cur = (day, phase)
+                log.append(f"—— 第 {day} 天 · {'夜晚' if phase == 'Night' else '白天'} ——")
             txt = e.get("text", "")
             if txt:
+                tag = "[私密] " if e.get("vis") == "private" else ""
                 log.append(tag + txt)
-        body = ["【你已知的信息】"] + (log or ["（暂无）"]) + ["", "【当前需要你决定】", ask.get("prompt", "")]
-        if ask["qtype"] == "choose":
+
+        day = ask.get("day")
+        phase = "夜晚" if ask.get("phase") == "Night" else "白天"
+        body = ["【你已知的信息（按时间顺序）】"] + (log or ["（暂无）"]) + [
+            "", f"【现在：第 {day} 天 · {phase}】需要你：{ask.get('prompt', '')}"]
+
+        qtype = ask["qtype"]
+        if qtype == "choose":
             opts = "、".join(f'P{c["seat"]}' for c in ask.get("candidates", []))
-            body.append(f"可选：{opts}" + ("；也可不选（跳过/弃权）。" if ask.get("allowSkip") else "。"))
-        elif ask["qtype"] == "speak":
-            body.append(f"（请直接以 P{self.seat} 的第一人称说出这句话，不要解释、不要加前缀。）")
+            body.append("可选：" + opts + ("；也可不选（跳过/弃权）。" if ask.get("allowSkip") else "。"))
+        elif qtype == "speak":
+            body.append(self._speak_hint(ask))
         return [{"role": "user", "content": "\n".join(body)}]
+
+    def _speak_hint(self, ask: dict) -> str:
+        kind = ask.get("kind", "")
+        seat, day = self.seat, ask.get("day")
+        if kind == "WolfChat":
+            return (f"（**这是狼队密谋，只有你的狼队友能看到，不是公开发言。** 以 P{seat} 的身份"
+                    f"和队友商量配合：今晚刀谁、谁去悍跳预言家/女巫、怎么对跳站边、怎么甩锅给好人。"
+                    f"直接说人话，别装好人、别复述规则、别念客套话。）")
+        if kind == "LastWords":
+            return f"（这是你的**遗言**，全场可见。以 P{seat} 的身份留下你的判断与带队建议。）"
+        # public day / campaign speech
+        return (f"（**公开发言**，全场可见。现在是第 {day} 天，请**基于目前最新的信息**"
+                f"（今天的死讯、此前的发言/查杀/站边）说出**新的**分析或行动建议，"
+                f"**不要重复你之前说过的话**。以 P{seat} 的第一人称说，别复述规则、别加前缀。）")
 
     @staticmethod
     def _schema(ask: dict) -> Optional[dict]:
@@ -150,7 +175,7 @@ class AgentBrain:
             if txt.startswith("{") or txt.startswith("```"):
                 obj = _loads_lenient(txt)
                 if isinstance(obj, dict):
-                    for k in ("speech", "message", "text", "content", "say"):
+                    for k in ("speech", "speak", "message", "text", "content", "say"):
                         v = obj.get(k)
                         if isinstance(v, str) and v.strip():
                             txt = v.strip()

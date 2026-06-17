@@ -56,6 +56,9 @@ inline std::string deathOrderDisclaimer() { return "（死亡顺序不分先后�
 inline std::string out(const std::string& name, const std::string& causes) {
     return name + " 出局（" + causes + "）";
 }
+// Death announced WITHOUT a cause (§11): a night death is just「出局」so nobody can
+// tell knife from poison; only public-event causes (放逐/自爆/枪杀) are ever named.
+inline std::string outNoCause(const std::string& name) { return name + " 出局"; }
 inline std::string lastWordsCue(const std::string& name) { return "  → " + name + " 可发表遗言"; }
 inline std::string lastWordsPause(const std::string& name) { return "请 " + name + " 发表遗言"; }
 inline std::string announcePause() { return "准备公布昨夜情况"; }
@@ -67,6 +70,8 @@ inline std::string voteTransition() { return "【发言结束，进入放逐投�
 inline std::string voteHeader() { return "【放逐投票】"; }
 inline std::string firstRoundVotes(const std::string& body) { return "  首轮票数：" + body; }
 inline std::string runoffVotes(const std::string& body) { return "  决胜轮票数：" + body; }
+// Individual ballots revealed together AFTER collection (§6): "P1→P5、P3 弃票、…".
+inline std::string voteBallots(const std::string& body) { return "  投票详情：" + body; }
 inline std::string exiled(const std::string& name) {
     return "  放逐结果：" + name + " 票数最高，被放逐";
 }

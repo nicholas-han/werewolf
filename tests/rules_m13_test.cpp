@@ -174,9 +174,12 @@ TEST(M13, NightDeathsAnnouncedWithDisclaimerInSeatOrder) {
     EXPECT_EQ(game.run(), GameResult::WolfWins);
 
     EXPECT_TRUE(hasEvent(dp, txt::deathOrderDisclaimer()));  // §5.2 "死亡顺序不分先后"
-    // Announced by seat number ascending (P3 before P4), regardless of who/how.
-    const int p3 = indexOf(dp, txt::out("P3", txt::cause(DeathCause::Poisoned)));
-    const int p4 = indexOf(dp, txt::out("P4", txt::cause(DeathCause::Killed)));
+    // Announced by seat number ascending (P3 before P4), regardless of who/how —
+    // and a night death names NO cause (§11), so knife vs poison can't be told apart.
+    EXPECT_FALSE(anyContains(dp, txt::cause(DeathCause::Killed)));    // 狼杀 never public
+    EXPECT_FALSE(anyContains(dp, txt::cause(DeathCause::Poisoned)));  // 毒杀 never public
+    const int p3 = indexOf(dp, txt::outNoCause("P3"));
+    const int p4 = indexOf(dp, txt::outNoCause("P4"));
     ASSERT_GE(p3, 0);
     ASSERT_GE(p4, 0);
     EXPECT_LT(p3, p4);

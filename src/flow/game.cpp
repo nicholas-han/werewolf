@@ -666,17 +666,26 @@ std::optional<int> Game::resolveExile() {
 
     // Round 1: the sheriff votes via 归票 (1.5 single / 1.0 PK), others weight 1 (§7.1).
     std::map<int, double> counts;
+    std::string ballots;  // who voted whom (revealed together AFTER collection, §6)
+    auto record = [&](std::string& acc, int voter, std::optional<int> target, bool sheriff) {
+        if (!acc.empty()) acc += "、";
+        acc += nameOrId(state_, voter) + (sheriff ? "(警长)" : "");
+        acc += target ? ("→" + nameOrId(state_, *target)) : " 弃票";
+    };
     for (int v : alive) {
         if (state_.sheriffId && *state_.sheriffId == v) {
             SheriffBallot b = provider_.chooseSheriffExileBallot(state_, v, alive);
-            if (b.target && contains(alive, *b.target)) {
-                counts[*b.target] += b.consolidateSingle ? 1.5 : 1.0;
-            }
+            std::optional<int> t = (b.target && contains(alive, *b.target)) ? b.target : std::nullopt;
+            if (t) counts[*t] += b.consolidateSingle ? 1.5 : 1.0;
+            record(ballots, v, t, true);
         } else {
             std::optional<int> pick = provider_.chooseVote(state_, v, alive);
-            if (pick && contains(alive, *pick)) counts[*pick] += 1.0;
+            if (!(pick && contains(alive, *pick))) pick.reset();
+            if (pick) counts[*pick] += 1.0;
+            record(ballots, v, pick, false);
         }
     }
+    provider_.notify(txt::voteBallots(ballots));
     provider_.notify(txt::firstRoundVotes(fmt(counts)));
     std::vector<int> leaders = topCandidates(counts);
 
@@ -698,10 +707,14 @@ std::optional<int> Game::resolveExile() {
         if (!contains(leaders, id)) runoffVoters.push_back(id);
     }
     std::map<int, double> counts2;
+    std::string ballots2;
     for (int v : runoffVoters) {
         std::optional<int> pick = provider_.chooseVote(state_, v, leaders);
-        if (pick && contains(leaders, *pick)) counts2[*pick] += 1.0;
+        if (!(pick && contains(leaders, *pick))) pick.reset();
+        if (pick) counts2[*pick] += 1.0;
+        record(ballots2, v, pick, false);
     }
+    provider_.notify(txt::voteBallots(ballots2));
     provider_.notify(txt::runoffVotes(fmt(counts2)));
     std::vector<int> leaders2 = topCandidates(counts2);
 
