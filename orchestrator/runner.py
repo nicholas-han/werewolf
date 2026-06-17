@@ -20,6 +20,16 @@ from orchestrator.recorder import Recorder
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 
+# Night/secret actions: naming the seat would leak a hidden role to a human player
+# (§11). Heartbeat stays generic for these; public actions show seat + a label.
+_SECRET_KINDS = {"NightKill", "SelfDestruct", "Inspect", "Guard", "WitchSave",
+                 "WitchPoison", "HunterShot", "MechanicLearn", "MechanicBigKnife"}
+_PUBLIC_LABELS = {
+    "Vote": "投票放逐", "RunoffVote": "决胜投票", "RunForSheriff": "决定是否上警",
+    "Withdraw": "决定是否退水", "SheriffVote": "投票选警长", "ConsolidateSingle": "警长归票",
+    "BallotTarget": "警长投票", "BadgeTransfer": "移交警徽", "SpeechDirection": "定发言方向",
+}
+
 
 def _default_engine_path() -> str:
     return str(_REPO_ROOT / "build" / "werewolf")
@@ -131,13 +141,27 @@ class Orchestrator:
                 self.human.observe(ev)
         # moderator: recorder only (never a player view)
 
+    def _heartbeat(self, ask: dict) -> None:
+        """Progress line for an AI decision. Public actions show seat + a label;
+        secret night actions stay generic so a human player learns no hidden role."""
+        kind = ask.get("kind", "")
+        seat = ask["seat"]
+        if ask.get("qtype") == "speak":
+            if kind == "WolfChat":
+                print("· 有玩家在行动…（请稍候）", file=sys.stderr, flush=True)
+            else:
+                label = "留遗言" if kind == "LastWords" else "发言"
+                print(f"· P{seat} {label}中…", file=sys.stderr, flush=True)
+            return
+        if kind in _SECRET_KINDS:
+            print("· 有玩家在行动…（请稍候）", file=sys.stderr, flush=True)
+        else:
+            print(f"· P{seat} {_PUBLIC_LABELS.get(kind, '思考')}中…", file=sys.stderr, flush=True)
+
     def _answer(self, ask: dict) -> dict:
         seat = ask["seat"]
         if seat in self.brains:
-            # Heartbeat: AI decisions can be silent for tens of seconds each (esp. the
-            # sheriff "上警?" polling), so show the human it's working, not frozen.
-            prompt = (ask.get("prompt") or ask.get("kind") or "")[:24]
-            print(f"· P{seat} 思考中…（{prompt}）", file=sys.stderr, flush=True)
+            self._heartbeat(ask)  # so silent AI stretches don't look frozen (§11-safe)
             reply, trace = self.brains[seat].answer(ask)
             assert self.recorder is not None
             self.recorder.on_decision(ask, reply, trace)

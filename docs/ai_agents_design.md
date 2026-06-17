@@ -345,7 +345,7 @@ class LlmClient(Protocol):
 ### 7.2 后端与配置
 
 后端（实现同一 `LlmClient`）：
-- `OllamaClient(model, host="http://localhost:11434")` — **本期默认**。**不强制 `format:"json"`**（会抑制 R1 的思考）；靠 prompt 约定 + §7.4 宽松解析兜底。对 R1 做适配（§7.5）。
+- `OllamaClient(model, host="http://localhost:11434")` — **本期默认**。choose/confirm 把 `AgentBrain` 的 JSON schema 作为 Ollama **`format`** 下发——**只约束 `content` 为合法 JSON（choice 的 `enum` 还保证合法候选），思考仍在独立 `thinking` 字段、不被抑制** → 决策几乎不再回退。speak 不带 `format`（自由发言）。对 R1 做适配（§7.5）。
 - `OpenAICompatClient(base_url, api_key_env, model)` — 覆盖 OpenAI 及大量兼容服务；结构化用 `response_format=json_schema` / function calling。
 - `AnthropicClient(api_key_env, model)` — Anthropic Messages API；结构化用 tool use。
 - 后续：其它家照此添加。
@@ -443,9 +443,10 @@ parse_and_validate(out, ask):
    - 对 **speak**：**只把 `</think>` 之后的正文当作要广播的发言**——`<think>` 里的推理（怀疑谁、要不要悍跳）**永远不进** `speak.text`。若模型只吐了 think、没给 think 外的正文，按 §7.4 重试/回退（绝不把思考块直接发出去）。
    - 对 **choose/confirm**：`</think>` 之后取那行 JSON。
    - 这天然喂给「心里话 vs 明面」的分离（§7.3）。
-3. **结构化输出靠兜底**：R1 不保证严格遵守 JSON schema，提示里明确「思考结束后**只输出一行 JSON**：`{"choice": <座位号|null>}`」，并由 §7.4 的「解析→校验→重试→合法默认」保证永不卡死。
+3. **结构化输出用 Ollama `format`**：把候选 `enum` 的 JSON schema 作为 `format` 下发，**强制 `content` 为合法 JSON 且 choice ∈ 合法候选**；因 Ollama 把思考放在独立 `thinking` 字段，**`format` 不抑制思考**。这从根本上消除了「R1 只思考不吐 JSON → 回退」。§7.4 的宽松解析 + 合法默认仍作最终兜底。
 
 **实测（deepseek-r1:14b @ Ollama，已接通验证）：**
+- **结构化输出已解决回退**：choose/confirm 用 `format`=候选 enum 的 schema → content 必为合法 JSON 且 choice 合法、thinking 照常（实测预言家会真验人、上警是真决策，`fallback` 基本消失）。不加 `format` 时 R1 常把答案留在思考里 → 回退、神职白白跳过。
 - Ollama 把 **thinking 与 content 分字段**返回；`OllamaClient` 把 `thinking` 包回 `<think>…</think>` 拼在 content 前，供 `AgentBrain` 统一切分（reasoning 进 trace、**绝不广播**）。
 - `think:false` 在本机**不可靠**（choose 仍思考、speak 直接拒答），故**默认保持 think 开**。
 - 已验证可用：choose 返回**模型真实选择**（非回退）、speak 为干净的第一人称发言、`<think>` 不外泄。

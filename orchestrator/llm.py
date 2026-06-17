@@ -91,6 +91,11 @@ class OllamaClient(LlmClient):
             "options": {"num_ctx": self.num_ctx, "temperature": temperature,
                         "top_p": self.top_p, "num_predict": max(max_tokens, self.num_predict)},
         }
+        # Structured output: constrain the *content* to the schema (the choice enum
+        # even guarantees a legal candidate) while reasoning stays in `thinking`.
+        # This is what stops R1 from "thinking but never emitting JSON" -> fallback.
+        if schema is not None:
+            body["format"] = schema
         try:
             obj = self._post("/api/chat", body, timeout=self.timeout)
         except (urllib.error.URLError, OSError, TimeoutError) as e:
