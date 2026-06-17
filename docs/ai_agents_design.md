@@ -259,7 +259,7 @@ JSON-lines（每行一个 JSON 对象，UTF-8，`\n` 分隔）。引擎与 orche
 目的：让 AI 狼协作更真实，并产出协作训练数据。**与白天发言一样，对结算/胜负零影响。**
 
 - `enums.h`：`SpeechKind::WolfChat`。
-- `game.cpp::runNight`：在狼人睁眼、做刀决策**之前**，插入一轮私聊：
+- `game.cpp::runNight`：在「**狼人请睁眼**」之后、做刀决策**之前**，插入一轮私聊（即夜间行动循环中、`狼人` 这组 openEyes cue 之后、`actAtNight` 之前触发；不能放在循环之前，否则会出现「先私聊后睁眼」的错误叙述）：
   - 参与者 = 当前**存活的睁眼狼**（座位升序）；机械狼不参与。
   - 对每个参与者发 `ask(qtype=speak, kind=WolfChat)`；拿到 `text` 后，向**其他每个睁眼狼**发 `event vis=private etype=speech data={speaker, kind:"WolfChat"}`，并发 `vis=moderator` 入上帝 script。
   - **每晚刀前都进行**；v1 固定 **1 轮**（顺序发言）。多轮/自由往复留后续。
@@ -268,7 +268,7 @@ JSON-lines（每行一个 JSON 对象，UTF-8，`\n` 分隔）。引擎与 orche
   - ⚠️ **不要混淆**：「最后一名**睁眼**狼自爆」**不等于游戏结束**——若机械狼/隐狼等**不睁眼狼**仍存活，引擎按阵营计数仍判「狼未灭」，游戏继续、由不睁眼狼接手（如机械狼独立刀人，见 BRD §2/§4.1、[win_condition.cpp](../src/flow/win_condition.cpp) 按 `Faction::Wolf` 计数）。只有**全场狼皆出局**才判好人胜。
 - 记录：写入 `GameState.speeches`（`kind=WolfChat`），`formatTranscript` 可在上帝复盘中展示；brain 侧因 `vis=private` 仅狼可见，不泄露给好人。
 
-> 实现位置：狼私聊只是「收集发言 + 定向转发」，无机制效果，可作为 `runNight` 开头（重置 tonight 标记之后、夜间行动循环之前）的一个独立 helper，narration cue 用「狼人请睁眼，先内部交流」。这样不侵入既有按 `nightOrder` 排序的夜间行动循环。
+> 实现位置：狼私聊只是「收集发言 + 定向转发」，无机制效果。**触发点必须在夜间行动循环里、`狼人` 组 openEyes 之后**（用 `wolfChatDone` 标志只跑一次），这样叙述是「狼人请睁眼 → 私聊 → 刀」。早先误放在循环之前 → 「先私聊后睁眼」，已修。
 
 ### 5.5 `--json` 模式（main.cpp）
 
@@ -345,7 +345,7 @@ class LlmClient(Protocol):
 ### 7.2 后端与配置
 
 后端（实现同一 `LlmClient`）：
-- `OllamaClient(model, host="http://localhost:11434")` — **本期默认**。choose/confirm 把 `AgentBrain` 的 JSON schema 作为 Ollama **`format`** 下发——**只约束 `content` 为合法 JSON（choice 的 `enum` 还保证合法候选），思考仍在独立 `thinking` 字段、不被抑制** → 决策几乎不再回退。speak 不带 `format`（自由发言）。对 R1 做适配（§7.5）。
+- `OllamaClient(model, host="http://localhost:11434")` — **本期默认**。choose/confirm 把 `AgentBrain` 的 JSON schema 作为 Ollama **`format`** 下发——**只约束 `content` 为合法 JSON（choice 的 `enum` 还保证合法候选），思考仍在独立 `thinking` 字段、不被抑制** → 决策几乎不再回退。**speak 同样下发 `format`={"speech": string}**——否则弱/分心的模型会把发言写成 choose 式 JSON（如 `{"choice": null}`）；强制后必产出真发言字符串，`AgentBrain` 抽出 `speech`。对 R1 做适配（§7.5）。
 - `OpenAICompatClient(base_url, api_key_env, model)` — 覆盖 OpenAI 及大量兼容服务；结构化用 `response_format=json_schema` / function calling。
 - `AnthropicClient(api_key_env, model)` — Anthropic Messages API；结构化用 tool use。
 - 后续：其它家照此添加。

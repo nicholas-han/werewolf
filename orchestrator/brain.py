@@ -134,7 +134,11 @@ class AgentBrain:
         if qtype == "confirm":
             return {"type": "object", "properties": {"decision": {"type": "boolean"}},
                     "required": ["decision"]}
-        return None  # speak: free text
+        # speak: force {"speech": "<words>"} so the model can't drift into choose-style
+        # JSON (e.g. {"choice": null}); AgentBrain extracts the string. A backend that
+        # ignores schema (Fake) just returns plain text, also handled by _parse.
+        return {"type": "object", "properties": {"speech": {"type": "string"}},
+                "required": ["speech"]}
 
     def _parse(self, ask: dict, answer: str) -> tuple[dict, bool]:
         """Parse the model answer into a legal reply field; return (fields, fallback)."""
@@ -146,7 +150,7 @@ class AgentBrain:
             if txt.startswith("{") or txt.startswith("```"):
                 obj = _loads_lenient(txt)
                 if isinstance(obj, dict):
-                    for k in ("message", "text", "speech", "content", "say"):
+                    for k in ("speech", "message", "text", "content", "say"):
                         v = obj.get(k)
                         if isinstance(v, str) and v.strip():
                             txt = v.strip()

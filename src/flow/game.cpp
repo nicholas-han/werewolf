@@ -251,8 +251,6 @@ GameResult Game::runNight() {
         p.poisonedTonight = false;
     }
 
-    runWolfChat();  // §5.4: wolves coordinate before the knife (no mechanical effect)
-
     struct Act {
         Player* owner;
         NightActor* actor;
@@ -277,12 +275,19 @@ GameResult Game::runNight() {
     // The cue is emitted for every group (alive or not); only living owners act.
     NightContext ctx;
     std::string openCue;
+    bool wolfChatDone = false;
     for (const Act& a : acts) {
         const std::string cue = a.actor->nightCue();
         if (cue != openCue) {
             if (!openCue.empty()) provider_.notify(txt::closeEyes(openCue));
             provider_.notify(txt::openEyes(cue));
             openCue = cue;
+            // §5.4: open wolves chat AFTER "狼人请睁眼", BEFORE the knife. "狼人" is the
+            // open-wolf NightKill cue (role_abilities.h); the mechanic uses "机械狼".
+            if (cue == "狼人" && !wolfChatDone) {
+                runWolfChat();
+                wolfChatDone = true;
+            }
         }
         if (a.owner->isAlive()) a.actor->actAtNight(ctx, state_, *a.owner, provider_);
     }
