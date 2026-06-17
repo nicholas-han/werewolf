@@ -686,18 +686,22 @@ std::optional<int> Game::resolveExile() {
         acc += nameOrId(state_, voter) + (sheriff ? "(警长)" : "");
         acc += target ? ("→" + nameOrId(state_, *target)) : " 弃票";
     };
+    // §7.1: the sheriff 归票 FIRST and OPENLY, so everyone else votes knowing it.
+    if (state_.sheriffId && contains(alive, *state_.sheriffId)) {
+        const int s = *state_.sheriffId;
+        SheriffBallot b = provider_.chooseSheriffExileBallot(state_, s, alive);
+        std::optional<int> t = (b.target && contains(alive, *b.target)) ? b.target : std::nullopt;
+        if (t) counts[*t] += b.consolidateSingle ? 1.5 : 1.0;
+        provider_.notify(txt::sheriffExileBallot(nameOrId(state_, s), b.consolidateSingle,
+                                                 t ? nameOrId(state_, *t) : std::string()));
+        record(ballots, s, t, true);
+    }
     for (int v : alive) {
-        if (state_.sheriffId && *state_.sheriffId == v) {
-            SheriffBallot b = provider_.chooseSheriffExileBallot(state_, v, alive);
-            std::optional<int> t = (b.target && contains(alive, *b.target)) ? b.target : std::nullopt;
-            if (t) counts[*t] += b.consolidateSingle ? 1.5 : 1.0;
-            record(ballots, v, t, true);
-        } else {
-            std::optional<int> pick = provider_.chooseVote(state_, v, alive);
-            if (!(pick && contains(alive, *pick))) pick.reset();
-            if (pick) counts[*pick] += 1.0;
-            record(ballots, v, pick, false);
-        }
+        if (state_.sheriffId && *state_.sheriffId == v) continue;  // sheriff already 归票
+        std::optional<int> pick = provider_.chooseVote(state_, v, alive);
+        if (!(pick && contains(alive, *pick))) pick.reset();
+        if (pick) counts[*pick] += 1.0;
+        record(ballots, v, pick, false);
     }
     provider_.notify(txt::voteBallots(ballots));
     provider_.notify(txt::firstRoundVotes(fmt(counts)));

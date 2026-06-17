@@ -72,6 +72,11 @@ inline std::string firstRoundVotes(const std::string& body) { return "  首轮�
 inline std::string runoffVotes(const std::string& body) { return "  决胜轮票数：" + body; }
 // Individual ballots revealed together AFTER collection (§6): "P1→P5、P3 弃票、…".
 inline std::string voteBallots(const std::string& body) { return "  投票详情：" + body; }
+// Sheriff 归票 announced FIRST/openly, before others vote (§7.1).
+inline std::string sheriffExileBallot(const std::string& name, bool single, const std::string& target) {
+    return "  警长 " + name + " 归票：" + (single ? "归单人（1.5 票）" : "归多人 PK（1 票）") + "，" +
+           (target.empty() ? "弃票" : ("投 " + target));
+}
 inline std::string exiled(const std::string& name) {
     return "  放逐结果：" + name + " 票数最高，被放逐";
 }
