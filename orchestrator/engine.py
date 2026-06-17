@@ -16,10 +16,13 @@ class EngineProcess:
     """
 
     def __init__(self, engine_path: str, board: int, seed: int, ask_timeout: int = 600,
-                 wolf_chat_rounds: int = 2):
+                 wolf_chat_rounds: int = 2, interrupts: bool = False):
+        args = [engine_path, "--json", "--board", str(board), "--seed", str(seed),
+                "--ask-timeout", str(ask_timeout), "--wolf-chat-rounds", str(wolf_chat_rounds)]
+        if interrupts:
+            args.append("--interrupts")
         self.proc = subprocess.Popen(
-            [engine_path, "--json", "--board", str(board), "--seed", str(seed),
-             "--ask-timeout", str(ask_timeout), "--wolf-chat-rounds", str(wolf_chat_rounds)],
+            args,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,

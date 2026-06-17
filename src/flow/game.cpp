@@ -214,14 +214,22 @@ std::vector<int> Game::cueSpeechOrder(int nightDeathCount, int singleDeadSeat) {
     return order;
 }
 
-void Game::collectDaySpeeches(const std::vector<int>& orderSeats) {
+std::optional<int> Game::collectDaySpeeches(const std::vector<int>& orderSeats) {
     for (int seat : orderSeats) {
         const Player* p = state_.find(seat);
         if (p == nullptr || !p->isAlive()) continue;
         std::string text =
             provider_.collectSpeech(state_, p->id(), SpeechKind::Statement, state_.day);
         state_.recordSpeech(state_.day, SpeechKind::Statement, p->id(), seat, std::move(text));
+        // §2 per-speech interrupt: after each speech a wolf may自爆 (ends the day).
+        if (speechInterrupts_ && board_.config.blownUpEnabled) {
+            const std::vector<int> wolves = aliveWolfIds();
+            if (!wolves.empty()) {
+                if (std::optional<int> sd = provider_.chooseSelfDestruct(state_, wolves)) return sd;
+            }
+        }
     }
+    return std::nullopt;
 }
 
 void Game::runWolfChat() {
@@ -521,31 +529,45 @@ Game::ElectionOutcome Game::runSheriffElection() {
         return {GameResult::Ongoing, false};
     }
 
-    // Candidate speeches (BRD §7.2-2): each candidate pitches in registration order.
-    // Recorded as day statements; no-op for providers that don't collect speech.
+    // Candidate speeches (BRD §7.2-2), in registration order. With speech interrupts
+    // on, after each pitch a wolf may自爆（§7.4 中断竞选）且候选人可退水（§7.2-3）;
+    // off = a single退水/自爆 window after all speeches (§7.2-4). 吞毒-eligible:
+    // pending (un-announced) night-dead wolves may also自爆 (§2).
+    std::vector<int> remaining = candidates;
     for (int cid : candidates) {
+        if (speechInterrupts_ && !contains(remaining, cid)) continue;  // already withdrew
         const Player* cp = state_.find(cid);
         if (cp == nullptr) continue;
         std::string pitch = provider_.collectSpeech(state_, cid, SpeechKind::Statement, state_.day);
         state_.recordSpeech(state_.day, SpeechKind::Statement, cid, cp->seat(), std::move(pitch));
+        if (!speechInterrupts_) continue;
+        {
+            const std::vector<int> wolves = selfDestructWolfCandidates();
+            if (!wolves.empty()) {
+                if (std::optional<int> sd = provider_.chooseSelfDestruct(state_, wolves)) {
+                    return resolveElectionSelfDestruct(*sd, /*pkLeaders=*/{}, /*wasDeferred=*/false);
+                }
+            }
+        }
+        std::vector<int> still;
+        for (int id : remaining) {
+            if (!provider_.chooseWithdraw(state_, id)) still.push_back(id);
+        }
+        remaining = std::move(still);
+        if (remaining.size() <= 1) break;  // resolved by the shared block below
     }
 
-    // Withdraw / self-destruct window (§7.2-4). A wolf self-destruct interrupts
-    // the election (§7.4); on day 2 a second interruption kills the badge (§7.5).
-    // 吞毒-eligible: pending (un-announced) night-dead wolves may also自爆 (§2).
-    {
+    if (!speechInterrupts_) {  // single退水/自爆 window after all speeches (§7.2-4)
         const std::vector<int> wolves = selfDestructWolfCandidates();
         if (!wolves.empty()) {
             if (std::optional<int> sd = provider_.chooseSelfDestruct(state_, wolves)) {
                 return resolveElectionSelfDestruct(*sd, /*pkLeaders=*/{}, /*wasDeferred=*/false);
             }
         }
-    }
-
-    // Withdrawals (§7.2-3).
-    std::vector<int> remaining;
-    for (int id : candidates) {
-        if (!provider_.chooseWithdraw(state_, id)) remaining.push_back(id);
+        remaining.clear();
+        for (int id : candidates) {
+            if (!provider_.chooseWithdraw(state_, id)) remaining.push_back(id);
+        }
     }
 
     electionResolved_ = true;
@@ -719,10 +741,12 @@ GameResult Game::runDay() {
     // 发言顺序 cue (③ §7.1.2): single death -> 死左/死右; multi / peaceful -> from sheriff.
     const std::vector<int> speakOrder = cueSpeechOrder(nightDeathCount, singleDeadSeat);
     provider_.notify(txt::speechPhase());
-    collectDaySpeeches(speakOrder);  // §4 发言记录
-
-    // Daytime self-destruct during 发言 (§2): day ends immediately, no vote.
-    if (board_.config.blownUpEnabled) {
+    // §2 自爆 during 发言：interrupts on -> per-speech (collectDaySpeeches returns the
+    // self-destructing wolf); off -> one window after all speeches.
+    if (std::optional<int> sd = collectDaySpeeches(speakOrder)) {  // §4 发言记录 (+ 中断)
+        return settlement_.apply({{*sd, DeathCause::BlownUp}});
+    }
+    if (!speechInterrupts_ && board_.config.blownUpEnabled) {
         const std::vector<int> wolves = aliveWolfIds();
         if (!wolves.empty()) {
             if (std::optional<int> sd = provider_.chooseSelfDestruct(state_, wolves)) {

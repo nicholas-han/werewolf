@@ -37,12 +37,18 @@ public:
     // all-pass). Default 2; non-AI providers no-op the chat regardless.
     void setWolfChatRounds(int rounds) { wolfChatRounds_ = rounds > 0 ? rounds : 1; }
 
+    // Per-speech 自爆/退水 interrupts during speaking phases (BRD §2/§7.2). Default
+    // off = a single window after speeches (fast). On = after each speaker, wolves
+    // may self-destruct and candidates may withdraw (faithful「随时」，但多很多次询问).
+    void setSpeechInterrupts(bool on) { speechInterrupts_ = on; }
+
 private:
     Board board_;
     DecisionProvider& provider_;
     GameState state_;
     Settlement settlement_;
-    int wolfChatRounds_ = 2;  // §5.4
+    int wolfChatRounds_ = 2;       // §5.4
+    bool speechInterrupts_ = false;  // §2/§7.2: per-speech 自爆/退水 interrupts
 
     // Night deaths recorded but not yet announced (awaiting the day's 公布死讯).
     std::vector<int> pendingNightDeaths_;
@@ -104,8 +110,10 @@ private:
     std::string moderatorStatus() const;                 // ④ status board
     // ③ 死左/死右: announces and returns the day's speaking order (alive seats).
     std::vector<int> cueSpeechOrder(int nightDeathCount, int singleDeadSeat);
-    // §4 发言记录: collect each speaker's words in order into the speech log.
-    void collectDaySpeeches(const std::vector<int>& orderSeats);
+    // §4 发言记录: collect each speaker's words in order into the speech log. With
+    // speech interrupts on, a wolf may self-destruct between speeches; returns that
+    // wolf's id (day ends), else std::nullopt.
+    std::optional<int> collectDaySpeeches(const std::vector<int>& orderSeats);
 
     std::vector<int> aliveIds() const;
     std::vector<int> aliveWolfIds() const;

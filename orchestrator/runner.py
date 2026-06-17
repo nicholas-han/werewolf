@@ -51,6 +51,7 @@ class Config:
     request_timeout: int = 600
     num_ctx: int = 8192
     wolf_chat_rounds: int = 2  # §5.4: max wolf night-chat rounds (natural early-stop)
+    interrupts: bool = False   # §2/§7.2: per-speech 自爆/退水 interrupts (slow; default off)
     # Optional explicit per-seat factory; overrides provider/model when set (tests).
     llm_factory: Optional[Callable[[int], LlmClient]] = None
 
@@ -179,7 +180,8 @@ class Orchestrator:
 
     def run(self) -> str:
         engine = EngineProcess(self.cfg.engine_path, self.cfg.board, self.cfg.seed,
-                               self.cfg.ask_timeout, self.cfg.wolf_chat_rounds)
+                               self.cfg.ask_timeout, self.cfg.wolf_chat_rounds,
+                               self.cfg.interrupts)
         try:
             for msg in engine.messages():
                 t = msg.get("t")
