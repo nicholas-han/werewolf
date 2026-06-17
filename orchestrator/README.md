@@ -13,15 +13,15 @@ backend, and the records. Design: [../docs/ai_agents_design.md](../docs/ai_agent
 cmake -B build && cmake --build build      # 产出 build/werewolf
 ```
 
-默认用本地 **Ollama `deepseek-r1:14b`**（须先 `ollama serve` 且 `ollama pull deepseek-r1:14b`）：
+默认用本地 **Ollama**（须先 `ollama serve`）。**不带 `--model` 时，启动会列出已装模型让你下拉选择**：
 
 ```bash
-python3 -m orchestrator --board 1 --seed 12345                 # 全 AI（真模型，较慢）
-python3 -m orchestrator --board 1 --seed 12345 --human-seat 1  # 你坐 1 号，其余 AI
-python3 -m orchestrator --fake                                 # 确定性假模型，秒级（管线/调试）
+python3 -m orchestrator --human-seat 1            # 启动时下拉选模型，你坐 1 号
+python3 -m orchestrator --model deepseek-r1:1.5b  # 指定模型、跳过下拉（1.5b 最快）
+python3 -m orchestrator --fake                    # 确定性假模型，秒级（管线/调试）
 ```
 
-> 真模型整局**很慢**（14b 推理约 17–35s/决策，整局数十分钟~数小时）；快速验证用 `--fake`。
+> 真模型整局**较慢**（14b 约 17–35s/决策；1.5b 快很多但策略弱）；快速验证用 `--fake`。
 
 产物：
 - `games/god_script.md` — 上帝视角复盘（含所有 public / private / moderator 事件）。
