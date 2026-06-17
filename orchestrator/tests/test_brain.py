@@ -77,5 +77,18 @@ class BrainParseTest(unittest.TestCase):
         self.assertIn("P1", sit)
 
 
+    def test_scratchpad_remembers_and_feeds_back(self):
+        b = _brain("<think>我怀疑P5是狼，明天推他</think>我是预言家，查杀P5")
+        b.answer({"t": "ask", "id": 1, "seat": 8, "qtype": "speak", "kind": "Statement",
+                  "day": 1, "phase": "Day"})
+        self.assertTrue(any("我怀疑P5是狼" in n["reasoning"] for n in b.notes))
+        # a later turn's prompt carries the prior private reasoning (coherence)
+        msgs = b._render({"t": "ask", "id": 2, "seat": 8, "qtype": "speak", "kind": "Statement",
+                          "day": 2, "phase": "Day"})
+        content = msgs[0]["content"]
+        self.assertIn("此前的内心判断", content)
+        self.assertIn("我怀疑P5是狼", content)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

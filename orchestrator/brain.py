@@ -57,6 +57,7 @@ class AgentBrain:
     view: list[dict] = field(default_factory=list)   # events visible to this seat
     roster: dict[int, str] = field(default_factory=dict)  # seat -> name (for 局势摘要)
     dead: set[int] = field(default_factory=set)           # seats observed out (public)
+    notes: list[dict] = field(default_factory=list)       # own past <think> (scratchpad)
 
     # --- view (memory) ---
     def observe(self, event: dict) -> None:
@@ -72,6 +73,17 @@ class AgentBrain:
             for seat, name in self.roster.items():
                 if seat not in self.dead and f"{name} 出局" in text:
                     self.dead.add(seat)
+
+    def _notes_section(self) -> str:
+        if not self.notes:
+            return ""
+        lines = ["【你此前的内心判断（仅你自己知道；保持前后一致、别自相矛盾）】"]
+        for n in self.notes[-4:]:  # recent few, tail-truncated (conclusion usually at end)
+            r = n.get("reasoning", "")
+            if len(r) > 260:
+                r = "…" + r[-260:]
+            lines.append(f"- 第{n.get('day')}天·{n.get('kind')}：{r}")
+        return "\n".join(lines)
 
     def _situation(self) -> str:
         if not self.roster:
@@ -102,6 +114,11 @@ class AgentBrain:
         reply: dict = {"t": "reply", "id": ask["id"], **parsed}
         if reasoning:
             reply["reasoning"] = reasoning
+            # Scratchpad: remember my own private reasoning so later turns stay coherent
+            # (fed back into my prompt; never broadcast). Cap memory; render recent only.
+            self.notes.append({"day": ask.get("day"), "kind": ask.get("kind"),
+                               "reasoning": reasoning.strip()})
+            self.notes = self.notes[-12:]
 
         trace = {
             "attempts": attempts,
@@ -160,6 +177,9 @@ class AgentBrain:
         day = ask.get("day")
         phase = "夜晚" if ask.get("phase") == "Night" else "白天"
         body = ["【你已知的信息（按时间顺序）】"] + (log or ["（暂无）"])
+        notes = self._notes_section()
+        if notes:
+            body += ["", notes]
         sit = self._situation()
         if sit:
             body += ["", sit]
