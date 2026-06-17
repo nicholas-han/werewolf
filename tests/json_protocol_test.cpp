@@ -151,6 +151,53 @@ TEST(JsonProtocol, WolfChatIsPrivateToWolvesNeverPublic) {
     EXPECT_NE(o.find("\"seat\":" + std::to_string(openWolves[1])), std::string::npos);
 }
 
+namespace {
+void wolvesAndTown(const GameState& s, std::vector<int>& wolves, std::vector<int>& town) {
+    for (const Player& p : s.players) {
+        if (p.faction() == Faction::Wolf && p.role().kind() != RoleKind::MechanicWolf)
+            wolves.push_back(p.id());
+        else if (p.faction() != Faction::Wolf)
+            town.push_back(p.id());
+    }
+}
+std::vector<int> aliveIds(const GameState& s) {
+    std::vector<int> v;
+    for (const Player& p : s.players) if (p.isAlive()) v.push_back(p.id());
+    return v;
+}
+}  // namespace
+
+TEST(JsonProtocol, WolfKillSecretVoteMajorityWins) {
+    GameState s = board9State();
+    std::vector<int> wolves, town;
+    wolvesAndTown(s, wolves, town);
+    ASSERT_EQ(wolves.size(), 3u);  // board9: 3 open wolves
+    const int A = town[0], B = town[1];
+    std::ostringstream rep;  // votes (seat order): A, A, B -> A wins 2:1
+    rep << "{\"t\":\"reply\",\"choice\":" << A << "}\n"
+        << "{\"t\":\"reply\",\"choice\":" << A << "}\n"
+        << "{\"t\":\"reply\",\"choice\":" << B << "}\n";
+    std::istringstream in(rep.str());
+    std::ostringstream out;
+    JsonDecisionProvider p(in, out, "B", 1);
+    EXPECT_EQ(p.chooseNightKill(s, aliveIds(s)), std::optional<int>(A));
+}
+
+TEST(JsonProtocol, WolfKillTieMeansNoKill) {
+    GameState s = board9State();
+    std::vector<int> wolves, town;
+    wolvesAndTown(s, wolves, town);
+    const int A = town[0], B = town[1];
+    std::ostringstream rep;  // A, B, 弃票 -> A:1 B:1 tie -> 空刀
+    rep << "{\"t\":\"reply\",\"choice\":" << A << "}\n"
+        << "{\"t\":\"reply\",\"choice\":" << B << "}\n"
+        << "{\"t\":\"reply\",\"choice\":null}\n";
+    std::istringstream in(rep.str());
+    std::ostringstream out;
+    JsonDecisionProvider p(in, out, "B", 1);
+    EXPECT_FALSE(p.chooseNightKill(s, aliveIds(s)).has_value());  // tie -> no kill
+}
+
 // --- full game over the protocol (EOF = every decision falls back legally) ---
 
 TEST(JsonProtocol, EofGameRunsToCompletionAndEmitsFrames) {

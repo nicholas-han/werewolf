@@ -1,6 +1,7 @@
 #include "io/json_decision_provider.h"
 
 #include <algorithm>
+#include <map>
 #include <string>
 
 #include "core/game_state.h"
@@ -297,17 +298,47 @@ void JsonDecisionProvider::emitGameOver(GameResult result) {
 std::optional<int> JsonDecisionProvider::chooseNightKill(const GameState& state,
                                                          const std::vector<int>& candidates) {
     sync(state);
-    const int rep = wolfRepresentative(state);
-    if (rep == -1) return std::nullopt;
-    std::optional<int> target =
-        askChoose(state, rep, AskKind::NightKill, "狼队请选择今晚的刀杀目标", candidates, true, true);
-
-    const std::string note = "【狼队】今晚刀：" + (target ? nameOf(state, *target) : "空刀");
-    for (const Player& p : state.players) {
-        if (!p.isAlive() || p.faction() != Faction::Wolf) continue;
-        if (p.role().kind() == RoleKind::MechanicWolf || p.id() == rep) continue;
-        emitNarration(Vis::Private, p.id(), note);
+    // Living "open" wolves vote; the mechanic acts alone (not via the team vote).
+    std::vector<int> wolves;
+    for (const Player& p : state.players) {  // seat order
+        if (p.isAlive() && p.faction() == Faction::Wolf &&
+            p.role().kind() != RoleKind::MechanicWolf) {
+            wolves.push_back(p.id());
+        }
     }
+
+    std::optional<int> target;
+    if (wolves.empty()) {
+        // Lone wolf (e.g. the mechanic once its pack is gone): a single pick.
+        const int rep = wolfRepresentative(state);
+        if (rep != -1) {
+            target = askChoose(state, rep, AskKind::NightKill, "请选择今晚的刀杀目标",
+                               candidates, true, false);
+        }
+    } else {
+        // Secret ballot (BRD §2 AI 狼刀决议): each open wolf privately votes a target
+        // (弃票 = 倾向空刀); the strict-max target is killed; a tie or no votes = 空刀.
+        std::map<int, int> tally;
+        for (int w : wolves) {
+            std::optional<int> v = askChoose(state, w, AskKind::NightKill,
+                                             "狼队投票：今晚刀谁？（可弃票=倾向空刀）", candidates,
+                                             true, false);
+            if (v) tally[*v]++;
+            emitDecision(w, "NightKillVote", v);  // god-view: each wolf's secret ballot
+        }
+        int best = -1, bestCount = 0, leaders = 0;
+        for (const auto& [t, c] : tally) {
+            if (c > bestCount) { best = t; bestCount = c; leaders = 1; }
+            else if (c == bestCount) { ++leaders; }
+        }
+        target = (bestCount > 0 && leaders == 1) ? std::optional<int>(best) : std::nullopt;
+    }
+
+    // God-view: the team's resolved knife; then privately tell every open wolf.
+    const int recorder = wolves.empty() ? wolfRepresentative(state) : wolves.front();
+    if (recorder != -1) emitDecision(recorder, "NightKill", target);
+    const std::string note = "【狼队】今晚刀：" + (target ? nameOf(state, *target) : std::string("空刀"));
+    for (int w : wolves) emitNarration(Vis::Private, w, note);
     return target;
 }
 
