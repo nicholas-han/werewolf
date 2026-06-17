@@ -1,11 +1,11 @@
 """CLI: run one game.
 
-    # 交互选模型（列出已装 Ollama 模型）+ 你坐 1 号：
-    python -m orchestrator --human-seat 1
-    # 指定模型，跳过下拉：
-    python -m orchestrator --model deepseek-r1:1.5b
-    # 确定性假模型，秒级（管线检查/调试）：
-    python -m orchestrator --fake
+交互式启动（在真实终端里）会依次让你选 **板子 → 模型 → 你的座位**；任何一项都可用
+对应 flag 预先指定来跳过：
+
+    python -m orchestrator                       # 全程下拉选择
+    python -m orchestrator --board 1 --human-seat 1 --model deepseek-r1:1.5b
+    python -m orchestrator --fake                # 确定性假模型，秒级（管线/调试）
 """
 
 from __future__ import annotations
@@ -19,6 +19,46 @@ from orchestrator.llm import OllamaClient
 from orchestrator.runner import Config, run_game
 
 _DEFAULT_MODEL = "deepseek-r1:14b"
+_BOARDS = {
+    1: ("9 人 预女猎", 9),
+    2: ("12 人 预女猎守 + 狼枪", 12),
+    3: ("12 人 通灵机械狼", 12),
+}
+
+
+def pick_board() -> int:
+    print("选择板子：")
+    for k, (name, n) in _BOARDS.items():
+        print(f"  {k}) {name}（{n} 人）")
+    try:
+        s = input("板子编号 [默认 1]> ").strip()
+    except EOFError:
+        s = ""
+    try:
+        n = int(s)
+        if n in _BOARDS:
+            return n
+    except ValueError:
+        pass
+    return 1
+
+
+def pick_human_seat(board: int) -> int | None:
+    seats = _BOARDS.get(board, ("", 9))[1]
+    try:
+        s = input(f"你坐第几号座位？(1-{seats}，回车 = 纯 AI 观战)> ").strip()
+    except EOFError:
+        s = ""
+    if not s:
+        return None
+    try:
+        v = int(s)
+        if 1 <= v <= seats:
+            return v
+    except ValueError:
+        pass
+    print("[orchestrator] 座位无效，按纯 AI 观战处理", file=sys.stderr)
+    return None
 
 
 def installed_models(host: str) -> list[str]:
@@ -29,8 +69,7 @@ def installed_models(host: str) -> list[str]:
         models = [m.get("name", "") for m in data.get("models", []) if m.get("name")]
     except Exception:  # noqa: BLE001
         return []
-    # deepseek-r1 variants first (most relevant here), then alphabetical.
-    models.sort(key=lambda n: (not n.startswith("deepseek-r1"), n))
+    models.sort(key=lambda n: (not n.startswith("deepseek-r1"), n))  # r1 variants first
     return models
 
 
@@ -40,11 +79,11 @@ def pick_model(host: str) -> str:
     if not models:
         print(f"[orchestrator] 取模型列表失败，用默认 {_DEFAULT_MODEL}", file=sys.stderr)
         return _DEFAULT_MODEL
-    print("可用本地模型（Ollama）：")
+    print("选择模型（Ollama 本地）：")
     for i, m in enumerate(models, 1):
         print(f"  {i}) {m}")
     try:
-        s = input(f"选择模型编号 [默认 1 = {models[0]}]> ").strip()
+        s = input(f"模型编号 [默认 1 = {models[0]}]> ").strip()
     except EOFError:
         s = ""
     if not s:
@@ -61,9 +100,9 @@ def pick_model(host: str) -> str:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Werewolf AI-agent orchestrator (M15).")
-    ap.add_argument("--board", type=int, default=1, choices=[1, 2, 3])
+    ap.add_argument("--board", type=int, default=None, choices=[1, 2, 3], help="省略=启动时选择")
     ap.add_argument("--seed", type=int, default=12345)
-    ap.add_argument("--human-seat", type=int, default=None, help="座位号；省略=全部 AI")
+    ap.add_argument("--human-seat", type=int, default=None, help="座位号；省略=启动时选择")
     ap.add_argument("--provider", default="ollama", choices=["ollama", "fake"])
     ap.add_argument("--model", default=None, help="Ollama 模型名；省略=启动时下拉选择")
     ap.add_argument("--ollama-host", default="http://localhost:11434")
@@ -74,14 +113,22 @@ def main() -> None:
     args = ap.parse_args()
 
     provider = "fake" if args.fake else args.provider
+    interactive = sys.stdin.isatty()  # only prompt in a real terminal
+
+    board = args.board if args.board is not None else (pick_board() if interactive else 1)
+
     model = args.model
     if provider == "ollama" and model is None:
-        model = pick_model(args.ollama_host)  # 下拉选择
+        model = pick_model(args.ollama_host) if interactive else _DEFAULT_MODEL
     elif model is None:
         model = _DEFAULT_MODEL
 
+    human = args.human_seat
+    if human is None and interactive:
+        human = pick_human_seat(board)
+
     kw: dict = {
-        "board": args.board, "seed": args.seed, "human_seat": args.human_seat,
+        "board": board, "seed": args.seed, "human_seat": human,
         "provider": provider, "model": model, "ollama_host": args.ollama_host,
         "request_timeout": args.timeout,
     }
@@ -96,8 +143,8 @@ def main() -> None:
         if not ok:
             print(f"[orchestrator] {msg}", file=sys.stderr)
             sys.exit(1)
-        print(f"[orchestrator] 模型：{cfg.model} @ {cfg.ollama_host}（推理模型可能较慢，请耐心）",
-              file=sys.stderr)
+        print(f"[orchestrator] 板子 {board} | 模型 {cfg.model} | 你的座位 "
+              f"{human if human else '（纯 AI 观战）'}（推理模型可能较慢）", file=sys.stderr)
 
     orch = run_game(cfg)
     print(f"\n结果：{orch.result}")
