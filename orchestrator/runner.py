@@ -15,9 +15,12 @@ from dataclasses import dataclass, field
 from typing import Callable, Optional
 
 from orchestrator.brain import AgentBrain
+from orchestrator.cloud import build_client
 from orchestrator.engine import EngineProcess
 from orchestrator.llm import FakeLlmClient, LlmClient, OllamaClient
 from orchestrator.recorder import Recorder
+
+_DEFAULT_OLLAMA_MODEL = "deepseek-r1:14b"
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -57,10 +60,17 @@ class Config:
     ask_timeout: int = 600
     out_dir: str = field(default_factory=lambda: str(_REPO_ROOT / "games"))
     personas: dict[int, str] = field(default_factory=dict)
-    # AI backend: "ollama" (local deepseek-r1) or "fake" (deterministic, for tests).
+    # AI backend (orchestrator.cloud.provider_choices() + these two locals):
+    #   "fake"   — deterministic, for tests/pipeline.
+    #   "ollama" — local deepseek-r1 (M15).
+    #   云端（M16，API key）— "bailian"(阿里百炼,优先)/"openai"/"deepseek"/"moonshot"/
+    #              "zhipu"/"anthropic"/"openai-compat"(任意兼容端点)。
     provider: str = "ollama"
-    model: str = "deepseek-r1:14b"
+    model: Optional[str] = None      # None => preset 默认（cloud）/ ollama 默认
     ollama_host: str = "http://localhost:11434"
+    base_url: Optional[str] = None   # cloud：覆盖预设 base_url（或 openai-compat 必填）
+    api_key_env: Optional[str] = None  # cloud：覆盖装 key 的环境变量名（默认随预设）
+    json_object: bool = False        # cloud：对 choose/confirm 下发 response_format=json_object
     request_timeout: int = 600
     num_ctx: int = 8192
     wolf_chat_rounds: int = 2  # §5.4: max wolf night-chat rounds (natural early-stop)
@@ -118,10 +128,16 @@ class Orchestrator:
     def _make_llm(self, seat: int) -> LlmClient:
         if self.cfg.llm_factory is not None:
             return self.cfg.llm_factory(seat)
-        if self.cfg.provider == "fake":
+        provider = self.cfg.provider
+        if provider == "fake":
             return FakeLlmClient()
-        return OllamaClient(self.cfg.model, self.cfg.ollama_host,
-                            num_ctx=self.cfg.num_ctx, timeout=self.cfg.request_timeout)
+        if provider == "ollama":
+            return OllamaClient(self.cfg.model or _DEFAULT_OLLAMA_MODEL, self.cfg.ollama_host,
+                                num_ctx=self.cfg.num_ctx, timeout=self.cfg.request_timeout)
+        # 云端（API key）：百炼/OpenAI/DeepSeek/Moonshot/智谱/Anthropic/任意兼容端点。
+        return build_client(provider, model=self.cfg.model, base_url=self.cfg.base_url,
+                            api_key_env=self.cfg.api_key_env, timeout=self.cfg.request_timeout,
+                            json_object=self.cfg.json_object)
 
     def _setup_seats(self, msg: dict) -> None:
         # Each game gets its own timestamped run dir, so past scripts are preserved

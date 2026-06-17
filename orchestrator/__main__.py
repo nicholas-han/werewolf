@@ -3,9 +3,18 @@
 交互式启动（在真实终端里）会依次让你选 **板子 → 模型 → 你的座位**；任何一项都可用
 对应 flag 预先指定来跳过：
 
-    python -m orchestrator                       # 全程下拉选择
+    python -m orchestrator                       # 全程下拉选择（本地 Ollama）
     python -m orchestrator --board 1 --human-seat 1 --model deepseek-r1:1.5b
     python -m orchestrator --fake                # 确定性假模型，秒级（管线/调试）
+
+云端大模型（API key，M16）——本地推理模型太慢时用它，**优先阿里百炼**：
+
+    export DASHSCOPE_API_KEY=sk-xxxx             # 先把 key 放进环境变量（绝不写进代码/配置）
+    python -m orchestrator --provider bailian --human-seat 1            # 默认 qwen-plus
+    python -m orchestrator --provider bailian --model qwen-max          # 指定模型
+    python -m orchestrator --provider deepseek --model deepseek-chat    # 其它兼容厂商同理
+    python -m orchestrator --provider openai-compat \\
+        --base-url https://your-endpoint/v1 --api-key-env MY_KEY --model foo   # 任意兼容端点
 """
 
 from __future__ import annotations
@@ -15,6 +24,8 @@ import json
 import sys
 import urllib.request
 
+from orchestrator.cloud import (GENERIC_PROVIDER, PROVIDER_PRESETS, build_client,
+                                provider_choices)
 from orchestrator.llm import OllamaClient
 from orchestrator.runner import Config, run_game
 
@@ -24,6 +35,7 @@ _BOARDS = {
     2: ("12 人 预女猎守 + 狼枪", 12),
     3: ("12 人 通灵机械狼", 12),
 }
+_LOCAL_PROVIDERS = ("ollama", "fake")  # 其余皆为云端（API key）
 
 
 def pick_board() -> int:
@@ -74,7 +86,7 @@ def installed_models(host: str) -> list[str]:
 
 
 def pick_model(host: str) -> str:
-    """Interactive dropdown: list installed models, return the chosen one."""
+    """Interactive dropdown: list installed Ollama models, return the chosen one."""
     models = installed_models(host)
     if not models:
         print(f"[orchestrator] 取模型列表失败，用默认 {_DEFAULT_MODEL}", file=sys.stderr)
@@ -98,15 +110,51 @@ def pick_model(host: str) -> str:
     return models[0]
 
 
+def pick_cloud_model(provider: str) -> str | None:
+    """Interactive dropdown for a cloud preset's suggested models (None = preset default).
+
+    openai-compat 无预设 → 不下拉（须 --model）。"""
+    preset = PROVIDER_PRESETS.get(provider)
+    if preset is None or not preset.models:
+        return None
+    print(f"选择模型（{preset.label}）：")
+    for i, m in enumerate(preset.models, 1):
+        tag = "（默认）" if m == preset.default_model else ""
+        print(f"  {i}) {m}{tag}")
+    try:
+        s = input(f"模型编号 [默认 = {preset.default_model}]> ").strip()
+    except EOFError:
+        s = ""
+    if not s:
+        return preset.default_model
+    try:
+        idx = int(s)
+        if 1 <= idx <= len(preset.models):
+            return preset.models[idx - 1]
+    except ValueError:
+        pass
+    return preset.default_model
+
+
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Werewolf AI-agent orchestrator (M15).")
+    ap = argparse.ArgumentParser(description="Werewolf AI-agent orchestrator (M15/M16).")
     ap.add_argument("--board", type=int, default=None, choices=[1, 2, 3], help="省略=启动时选择")
     ap.add_argument("--seed", type=int, default=12345)
     ap.add_argument("--human-seat", type=int, default=None, help="座位号；省略=启动时选择")
-    ap.add_argument("--provider", default="ollama", choices=["ollama", "fake"])
-    ap.add_argument("--model", default=None, help="Ollama 模型名；省略=启动时下拉选择")
+    ap.add_argument("--provider", default="ollama",
+                    choices=list(_LOCAL_PROVIDERS) + provider_choices(),
+                    help="ollama=本地；fake=假模型；其余为云端(API key)，优先 bailian(阿里百炼)")
+    ap.add_argument("--model", default=None,
+                    help="模型名；省略 → Ollama 启动下拉 / 云端用该厂商默认模型")
     ap.add_argument("--ollama-host", default="http://localhost:11434")
-    ap.add_argument("--timeout", type=int, default=600, help="单次模型调用软超时（秒）")
+    ap.add_argument("--base-url", default=None,
+                    help="云端：覆盖该厂商 base_url（provider=openai-compat 时必填）")
+    ap.add_argument("--api-key-env", default=None,
+                    help="云端：装 API key 的环境变量名（默认随厂商，如百炼=DASHSCOPE_API_KEY）")
+    ap.add_argument("--json-object", action="store_true",
+                    help="云端：对 choose/confirm 下发 response_format=json_object（加强结构化）")
+    ap.add_argument("--timeout", type=int, default=None,
+                    help="单次模型调用软超时（秒）；默认 本地 600 / 云端 60")
     ap.add_argument("--wolf-chat-rounds", type=int, default=2, help="狼队夜聊最大轮数（默认2，整轮全过则提前结束）")
     ap.add_argument("--interrupts", action="store_true", help="逐发言中断：每位发言后给自爆/退水机会（最忠实但慢；默认关）")
     ap.add_argument("--fake", action="store_true", help="等价于 --provider fake")
@@ -115,25 +163,30 @@ def main() -> None:
     args = ap.parse_args()
 
     provider = "fake" if args.fake else args.provider
+    is_cloud = provider not in _LOCAL_PROVIDERS
     interactive = sys.stdin.isatty()  # only prompt in a real terminal
 
     board = args.board if args.board is not None else (pick_board() if interactive else 1)
 
+    # 模型：ollama 走本地下拉/默认；云端用厂商默认（交互可下拉）；fake 无所谓。
     model = args.model
     if provider == "ollama" and model is None:
         model = pick_model(args.ollama_host) if interactive else _DEFAULT_MODEL
-    elif model is None:
-        model = _DEFAULT_MODEL
+    elif is_cloud and model is None and interactive:
+        model = pick_cloud_model(provider)  # None → build_client 用预设默认
 
     human = args.human_seat
     if human is None and interactive:
         human = pick_human_seat(board)
 
+    timeout = args.timeout if args.timeout is not None else (600 if provider == "ollama" else 60)
+
     kw: dict = {
         "board": board, "seed": args.seed, "human_seat": human,
         "provider": provider, "model": model, "ollama_host": args.ollama_host,
-        "request_timeout": args.timeout, "wolf_chat_rounds": args.wolf_chat_rounds,
-        "interrupts": args.interrupts,
+        "base_url": args.base_url, "api_key_env": args.api_key_env,
+        "json_object": args.json_object, "request_timeout": timeout,
+        "wolf_chat_rounds": args.wolf_chat_rounds, "interrupts": args.interrupts,
     }
     if args.engine:
         kw["engine_path"] = args.engine
@@ -148,6 +201,21 @@ def main() -> None:
             sys.exit(1)
         print(f"[orchestrator] 板子 {board} | 模型 {cfg.model} | 你的座位 "
               f"{human if human else '（纯 AI 观战）'}（推理模型可能较慢）", file=sys.stderr)
+    elif is_cloud:
+        try:
+            client = build_client(cfg.provider, model=cfg.model, base_url=cfg.base_url,
+                                   api_key_env=cfg.api_key_env, timeout=cfg.request_timeout,
+                                   json_object=cfg.json_object)
+        except ValueError as e:
+            print(f"[orchestrator] {e}", file=sys.stderr)
+            sys.exit(1)
+        ok, msg = client.health()
+        if not ok:
+            print(f"[orchestrator] {msg}", file=sys.stderr)
+            sys.exit(1)
+        print(f"[orchestrator] 云端模型 {client.name}（key 取自环境变量 "
+              f"{client.api_key_env}）| 板子 {board} | 你的座位 "
+              f"{human if human else '（纯 AI 观战）'}", file=sys.stderr)
 
     orch = run_game(cfg)
     print(f"\n结果：{orch.result}")
