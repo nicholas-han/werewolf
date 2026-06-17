@@ -261,7 +261,9 @@ class AgentBrain:
             ch = obj["choice"]
             if ch is None:
                 return ({"choice": None}, False) if allow_skip else (fallback(), True)
-            if isinstance(ch, int) and ch in seats:
+            # `not isinstance(ch, bool)`: in Python bool ⊂ int, so {"choice": true}
+            # would otherwise pass as seat 1 (True == 1) — a silent mis-vote.
+            if isinstance(ch, int) and not isinstance(ch, bool) and ch in seats:
                 return {"choice": ch}, False
         return fallback(), True
 

@@ -60,6 +60,13 @@ TEST(JsonUtil, RejectsGarbage) {
     EXPECT_FALSE(jsonu::parse("{").has_value());
 }
 
+TEST(JsonUtil, RejectsPathologicallyDeepNesting) {
+    // A single adversarial reply line must not overflow the stack; the depth
+    // cap turns it into a clean parse failure (engine then falls back).
+    std::string deep(5000, '[');
+    EXPECT_FALSE(jsonu::parse(deep).has_value());
+}
+
 // --- provider: single-decision round trips ---
 
 TEST(JsonProtocol, ScriptedChooseReturnsChoiceAndEmitsAsk) {
@@ -88,6 +95,16 @@ TEST(JsonProtocol, IllegalChoiceFallsBackForVote) {
     GameState s = board9State();
     JsonDecisionProvider p(in, out, "B", 1);
     EXPECT_EQ(p.chooseVote(s, 1, {1, 2, 3}), std::optional<int>(2));  // first non-self
+}
+
+TEST(JsonProtocol, OutOfIntRangeChoiceFallsBack) {
+    // 2^32+3 would narrow to seat 3 without a range guard; instead it must be
+    // rejected and fall back to first-non-self (2), distinct from the aliased 3.
+    std::istringstream in("{\"t\":\"reply\",\"choice\":4294967299}\n");
+    std::ostringstream out;
+    GameState s = board9State();
+    JsonDecisionProvider p(in, out, "B", 1);
+    EXPECT_EQ(p.chooseVote(s, 1, {1, 2, 3}), std::optional<int>(2));  // fallback, not aliased to 3
 }
 
 TEST(JsonProtocol, EofVoteFallsBackToFirstNonSelf) {

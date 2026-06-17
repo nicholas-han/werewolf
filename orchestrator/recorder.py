@@ -64,9 +64,14 @@ class Recorder:
             if seat is not None:
                 self.roles[seat] = data.get("role")
                 self.factions[seat] = data.get("faction")
-        if etype == "death":
-            for seat in data.get("dead", []):
-                self.died_day.setdefault(seat, ev.get("day"))
+        # Death is announced as public narration ("<name> 出局…"), not a structured
+        # event (protocol_v1.md §6.2), so track died_day by matching seat names —
+        # name+space is unambiguous ("P1 出局" ⊄ "P12 出局"), same rule AgentBrain uses.
+        if etype == "narration" and ev.get("vis") == "public":
+            text = ev.get("text", "")
+            for seat, name in self.names.items():
+                if seat not in self.died_day and f"{name} 出局" in text:
+                    self.died_day[seat] = ev.get("day")
 
         # Wolf-chat is emitted privately to each wolf; collapse to one script line.
         if etype == "speech" and data.get("kind") == "WolfChat":

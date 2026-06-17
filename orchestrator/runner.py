@@ -21,6 +21,18 @@ from orchestrator.recorder import Recorder
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 
+
+def _safe_reply(ask: dict) -> dict:
+    """A structurally-legal reply for any ask (the engine still applies its own
+    fallback to a legal value); used when a seat has no handler or a brain throws."""
+    rid = ask["id"]
+    qtype = ask.get("qtype")
+    if qtype == "choose":
+        return {"t": "reply", "id": rid, "choice": None}
+    if qtype == "confirm":
+        return {"t": "reply", "id": rid, "decision": False}
+    return {"t": "reply", "id": rid, "text": ""}
+
 # Night/secret actions: naming the seat would leak a hidden role to a human player
 # (§11). Heartbeat stays generic for these; public actions show seat + a label.
 _SECRET_KINDS = {"NightKill", "SelfDestruct", "Inspect", "Guard", "WitchSave",
@@ -171,19 +183,17 @@ class Orchestrator:
         seat = ask["seat"]
         if seat in self.brains:
             self._heartbeat(ask)  # so silent AI stretches don't look frozen (§11-safe)
-            reply, trace = self.brains[seat].answer(ask)
-            assert self.recorder is not None
-            self.recorder.on_decision(ask, reply, trace)
-            return reply
+            try:
+                reply, trace = self.brains[seat].answer(ask)
+                assert self.recorder is not None
+                self.recorder.on_decision(ask, reply, trace)
+                return reply
+            except Exception as e:  # noqa: BLE001 — a brain must never crash the game
+                print(f"[orchestrator] P{seat} 决策异常，回退合法默认：{e}", file=sys.stderr)
+                return _safe_reply(ask)
         if self.human and self.human.seat == seat:
             return self.human.answer(ask)
-        # Unknown seat: safe default so the engine never stalls.
-        rid = ask["id"]
-        if ask["qtype"] == "choose":
-            return {"t": "reply", "id": rid, "choice": None}
-        if ask["qtype"] == "confirm":
-            return {"t": "reply", "id": rid, "decision": False}
-        return {"t": "reply", "id": rid, "text": ""}
+        return _safe_reply(ask)  # unknown seat: safe default so the engine never stalls
 
     def run(self) -> str:
         engine = EngineProcess(self.cfg.engine_path, self.cfg.board, self.cfg.seed,

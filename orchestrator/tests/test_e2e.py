@@ -52,6 +52,12 @@ class E2ETest(unittest.TestCase):
             self.assertEqual(len(results), 1)
             self.assertIn(results[0]["result"], ("TownWins", "WolfWins"))
 
+            # died_day is derived from the public death narration; a finished game
+            # always has casualties, so at least one seat must carry a died_day.
+            per_seat = results[0]["per_seat"]
+            self.assertTrue(any(v.get("died_day") is not None for v in per_seat.values()),
+                            "died_day never populated — death tracking is broken")
+
     def test_fairness_no_cross_seat_leak(self):
         with tempfile.TemporaryDirectory() as d:
             orch = self._run(1, 4242, d)

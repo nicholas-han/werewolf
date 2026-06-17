@@ -59,6 +59,14 @@ class BrainParseTest(unittest.TestCase):
         self.assertIn(reply["choice"], (5, 7))  # first non-self
         self.assertTrue(tr["fallback"])
 
+    def test_choose_bool_is_not_seat_one(self):
+        # bool ⊂ int in Python: {"choice": true} must NOT be accepted as seat 1.
+        b = _brain('{"choice": true}')
+        ask = {"t": "ask", "id": 1, "seat": 6, "qtype": "choose", "kind": "Vote",
+               "candidates": [{"seat": 1, "name": "P1"}, {"seat": 7, "name": "P7"}], "allowSkip": True}
+        reply, tr = b.answer(ask)
+        self.assertTrue(tr["fallback"])
+        self.assertIn(reply["choice"], (1, 7))  # via fallback, never because True == 1
 
     def test_speak_extracts_from_fenced_json_with_meta(self):
         # god-script consistency: meta-prefix + ```json fence + "speak" key -> clean text

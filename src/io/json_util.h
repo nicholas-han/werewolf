@@ -93,6 +93,8 @@ struct P {
     const std::string& s;
     std::size_t i = 0;
     bool ok = true;
+    int depth = 0;  // guards against stack overflow on adversarial deep nesting
+    static constexpr int kMaxDepth = 200;
     explicit P(const std::string& str) : s(str) {}
 
     void ws() {
@@ -229,10 +231,10 @@ struct P {
     }
     Value value() {
         ws();
-        if (i >= s.size()) { ok = false; return {}; }
+        if (i >= s.size() || depth > kMaxDepth) { ok = false; return {}; }
         char c = s[i];
-        if (c == '{') return object();
-        if (c == '[') return array();
+        if (c == '{') { ++depth; Value v = object(); --depth; return v; }
+        if (c == '[') { ++depth; Value v = array(); --depth; return v; }
         if (c == '"') { Value v; v.t = Value::T::Str; v.s = string(); return v; }
         if (c == 't' || c == 'f' || c == 'n') return keyword();
         return number();

@@ -1,6 +1,7 @@
 #include "io/json_decision_provider.h"
 
 #include <algorithm>
+#include <climits>
 #include <map>
 #include <set>
 #include <string>
@@ -185,7 +186,10 @@ std::optional<int> JsonDecisionProvider::askChoose(const GameState& s, int seat,
         result = fallback();  // EOF / missing field -> fallback (vote-like still votes)
     } else if (c->isNull()) {
         result = allowSkip ? std::nullopt : fallback();  // explicit abstain, honored when allowed
-    } else if (c->isInt() && contains(candidates, static_cast<int>(c->i))) {
+    } else if (c->isInt() && c->i >= 0 && c->i <= INT_MAX &&
+               contains(candidates, static_cast<int>(c->i))) {
+        // Range-guard before narrowing: without it a value like 2^32+2 would
+        // truncate to a legal seat (2) and be accepted as a real vote.
         result = static_cast<int>(c->i);
     } else {
         result = fallback();  // illegal value -> fallback (not a silent abstain)

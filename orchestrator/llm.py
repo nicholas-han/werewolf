@@ -120,7 +120,10 @@ class OllamaClient(LlmClient):
         except Exception as e:  # noqa: BLE001
             return False, f"Ollama 不可达（{self.host}）：{e}。请先 `ollama serve`。"
         models = [m.get("name", "") for m in tags.get("models", [])]
-        if self.model in models or any(m.split(":")[0] == self.model.split(":")[0] for m in models):
+        # Require the EXACT tag: a family-prefix match (e.g. accepting r1:1.5b for a
+        # requested r1:14b) would pass health() but then every /api/chat 404s and the
+        # whole game silently runs on legal fallbacks.
+        if self.model in models or f"{self.model}:latest" in models:
             return True, "ok"
         return False, f"模型 {self.model} 未安装。已装：{models}。请 `ollama pull {self.model}`。"
 
