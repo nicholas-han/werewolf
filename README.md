@@ -46,7 +46,7 @@ ctest --test-dir build --output-on-failure # 跑测试（109 个用例）
 
 ## 路线图（摘要）
 
-法官单机工具（已完成）→ 随机发牌（已完成）→ 单设备传递游玩（已完成）→ 发言记录与复盘（已完成）→ 按玩家路由地基 + AI 自动对战演示（已完成）→ 拍刀阶段 C 自动最优搜索 → 真·联机（加一个 `NetworkChannel` + 真人客户端）→ 接入 AI agent 玩家（加一个 `AgentChannel`）。
+法官单机工具（已完成）→ 随机发牌（已完成）→ 单设备传递游玩（已完成）→ 发言记录与复盘（已完成）→ 按玩家路由地基 + AI 自动对战演示（已完成）→ **AI agent 玩家（M15：进程外 sidecar ＝ 引擎 JSON 协议 + Python orchestrator + 本地模型；见 [`docs/ai_agents_design.md`](docs/ai_agents_design.md) 与 [`orchestrator/`](orchestrator/)）** → 拍刀阶段 C 自动最优搜索 → 真·联机（`NetworkChannel` + 真人客户端）。
 
 ## 开发约定
 

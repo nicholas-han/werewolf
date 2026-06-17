@@ -68,6 +68,9 @@ vcpkg_installed/
 Testing/
 .cache/
 
+# macOS
+.DS_Store
+
 # editor / notes app config
 .obsidian/
 

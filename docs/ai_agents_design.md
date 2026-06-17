@@ -517,12 +517,14 @@ parse_and_validate(out, ask):
 
 > 每步可独立编译/测试通过再继续（项目约定：小步推进）。
 
-1. **冻结协议 v1**（本文 §4）。先把 schema 定死，后续都照它写。
-2. **引擎：EventSink + JsonDecisionProvider + `--json` 模式**（§5.1/5.2/5.5）。配协议测试。引擎规则不动，104 用例保持绿。
-3. **引擎：狼队私聊（§5.4）+ 候选人发言（§5.6）+ 发言广播 `speech` 事件**。配流程测试。
-4. **Python orchestrator 骨架**：EngineProcess + EventRouter + HumanTerminal + Recorder。先用 `FakeLlmClient` 跑通端到端（全 AI 走假大脑），验证整局完成 + 两份记录产出 + 公平性断言。
-5. ✅ **LlmClient + OllamaClient(R1 适配) + AgentBrain**（§7）：接本地 deepseek-r1:14b——per-decision 已验证（真实选择 + 干净第一人称发言 + reasoning 入 trace、不外泄）。真模型整局较慢（§7.5），挑时间跑；管线/调试用 `--fake`。
-6. **打磨**：persona 多样化、prompt 模板、`<think>` 解析鲁棒性、view 滚动摘要、trace 字段完善。
+1. ✅ **冻结协议 v1**（[`protocol_v1.md`](protocol_v1.md)）。
+2. ✅ **引擎：EventSink + JsonDecisionProvider + `--json` 模式**（§5.1/5.2/5.5）。配协议测试，引擎规则零改动，全套用例保持绿（现 **128**）。
+3. ✅ **引擎：狼队私聊（§5.4）+ 候选人发言（§5.6）+ 发言广播 `speech` 事件**。
+4. ✅ **Python orchestrator**：EngineProcess + AgentBrain + Recorder + Orchestrator 主循环；`FakeLlmClient` 端到端（整局完成 + 两份记录 + §11 公平性断言）。
+5. ✅ **LlmClient + OllamaClient(R1 适配) + AgentBrain**（§7）：接本地 deepseek-r1:14b——per-decision 已验证（真实选择 + 干净第一人称发言 + reasoning 入 trace、不外泄）。整局慢，挑时间跑；管线/调试用 `--fake`。
+6. ⏳ **打磨**：已做——局势摘要 / 角色提示 / 调温 / scratchpad（回灌历史 reasoning）/ 发言抽取统一；**留后续**——persona 多样化、view 滚动摘要、远程多模型、few-shot。
+
+**额外落地（试玩反馈，已在分支实现，见提交历史与 §5.4/§5.6/§5.7/§6/§7）**：狼队**多轮私聊**（默认 2，自然收尾）→**秘密投票定刀**（平票/无人＝空刀）；**逐发言自爆/退水中断**（`--interrupts`，默认关）；上警名单 / 警长**先公开归票** / 放逐&警长投票均**盲做后公开每人所投**；**夜死不报死因**（§11）；**每局独立保留 script**（带时间戳目录）。
 
 里程碑达成判据：**1 真人 + 8 本地 AI 跑完一局 9 人板（含狼私聊、候选人发言、发言、夜间技能、投票、警长），产出完整上帝 script 与 trace，且公平性测试通过。**
 
