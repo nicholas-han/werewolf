@@ -198,6 +198,38 @@ TEST(JsonProtocol, WolfKillTieMeansNoKill) {
     EXPECT_FALSE(p.chooseNightKill(s, aliveIds(s)).has_value());  // tie -> no kill
 }
 
+// --- §11: votes / withdraw / self-destruct must not leak an individual choice ---
+
+TEST(JsonProtocol, ExileVoteDoesNotLeakIndividualBallot) {
+    std::istringstream in("{\"t\":\"reply\",\"choice\":2}\n");
+    std::ostringstream out;
+    GameState s = board9State();
+    JsonDecisionProvider p(in, out, "B", 1);
+    p.chooseVote(s, 1, {1, 2, 3});
+    EXPECT_NE(out.str().find("\"t\":\"ask\""), std::string::npos);    // the voter is asked
+    EXPECT_EQ(out.str().find("\"t\":\"event\""), std::string::npos);  // but nothing is broadcast
+}
+
+TEST(JsonProtocol, WithdrawDoesNotLeak) {
+    std::istringstream in("{\"t\":\"reply\",\"decision\":false}\n");
+    std::ostringstream out;
+    GameState s = board9State();
+    JsonDecisionProvider p(in, out, "B", 1);
+    p.chooseWithdraw(s, 1);
+    EXPECT_EQ(out.str().find("\"t\":\"event\""), std::string::npos);
+}
+
+TEST(JsonProtocol, SelfDestructDecisionsAreModeratorOnly) {
+    std::istringstream in("{\"t\":\"reply\",\"decision\":false}\n{\"t\":\"reply\",\"decision\":false}\n");
+    std::ostringstream out;
+    GameState s = board9State();
+    JsonDecisionProvider p(in, out, "B", 1);
+    p.chooseSelfDestruct(s, {1, 2});  // ask two wolves whether to blow up
+    // no player-visible leak of who considered self-destructing (only god-view records)
+    EXPECT_EQ(out.str().find("\"vis\":\"public\""), std::string::npos);
+    EXPECT_EQ(out.str().find("\"vis\":\"private\""), std::string::npos);
+}
+
 // --- full game over the protocol (EOF = every decision falls back legally) ---
 
 TEST(JsonProtocol, EofGameRunsToCompletionAndEmitsFrames) {
