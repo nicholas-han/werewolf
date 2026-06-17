@@ -54,7 +54,8 @@ python3 -m orchestrator --provider openai-compat \
 
 要点：
 - 默认每次模型调用软超时 **云端 60s / 本地 600s**（`--timeout` 覆盖）；429/5xx/网络错带退避重试，最终失败回退合法默认，**绝不卡死游戏**。
-- 推理模型（`qwq-plus`/`deepseek-r1`/`deepseek-reasoner`…）的思维链在独立字段 `reasoning_content` 返回，已被包回 `<think>` 供 `AgentBrain` 切分——**绝不会漏进公开发言**（§11）。
+- 推理模型（`deepseek-r1`/`deepseek-reasoner`…）的思维链在独立字段 `reasoning_content` 返回，已被包回 `<think>` 供 `AgentBrain` 切分——**绝不会漏进公开发言**（§11）。
+- 暂不支持**仅流式**的模型（百炼 QwQ 系 `qwq-*`）与 OpenAI **o 系**（`o4-mini` 等需 `max_completion_tokens`/不收 `temperature`）——本客户端发非流式、统一 `temperature`+`max_tokens`，这两类会被拒（HTTP 400 → 回退合法默认）；故未在下拉菜单列出，待后续按模型族适配 / 实现 SSE 流式后再开。
 - 结构化输出默认靠提示词约定 + 宽松解析 + 合法回退；弱模型可加 `--json-object`（仅对 choose/confirm 下发 `response_format=json_object`，speak 不强制）。
 - 海外节点：`--base-url https://dashscope-intl.aliyuncs.com/compatible-mode/v1`（新加坡）等。
 

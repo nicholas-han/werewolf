@@ -52,9 +52,11 @@ _BAILIAN = ProviderPreset(
     default_model="qwen-plus",
     kind="openai",
     # 常用：qwen-plus 均衡 / qwen-max 最强 / qwen-turbo·qwen-flash 便宜快 /
-    # qwq-plus·deepseek-r1 为推理模型（带思维链，会更慢更贵）。
+    # deepseek-r1·deepseek-v3 为推理/强模型（带思维链，会更慢更贵）。
+    # 不列 QwQ 系（qwq-plus 等）：百炼上它们**仅支持流式输出**，本客户端发 stream:false
+    # 会被拒（HTTP 400）——待实现 SSE 流式后再开（见 build_client/complete 注释）。
     models=("qwen-plus", "qwen-max", "qwen-turbo", "qwen-flash",
-            "qwq-plus", "deepseek-r1", "deepseek-v3"),
+            "deepseek-r1", "deepseek-v3"),
     note="海外/新加坡节点改 --base-url https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
 )
 
@@ -62,8 +64,10 @@ PROVIDER_PRESETS: dict[str, ProviderPreset] = {
     "bailian": _BAILIAN,
     "dashscope": _BAILIAN,  # 别名：两个名字都指百炼
     "openai": ProviderPreset(
+        # 不列 o 系（o4-mini 等）：它们不收 temperature、且要 max_completion_tokens 而非
+        # max_tokens，本客户端的请求体会被拒（HTTP 400）；待按模型族适配后再开。
         "OpenAI", "https://api.openai.com/v1", "OPENAI_API_KEY", "gpt-4o-mini",
-        models=("gpt-4o-mini", "gpt-4o", "o4-mini")),
+        models=("gpt-4o-mini", "gpt-4o")),
     "deepseek": ProviderPreset(
         "DeepSeek", "https://api.deepseek.com/v1", "DEEPSEEK_API_KEY", "deepseek-chat",
         models=("deepseek-chat", "deepseek-reasoner")),
@@ -145,8 +149,9 @@ class _HttpBackend(LlmClient):
     def _request(self, url: str, headers: dict, body: dict) -> dict:
         """POST JSON, parse JSON; retry on 429/5xx/network with capped backoff.
 
-        Never logs `headers` (they carry the bearer key). Raises ApiError (HTTP) or
-        a network exception; the caller maps both to an empty Completion → 合法回退.
+        Never logs `headers` (they carry the bearer key). Raises ApiError (HTTP 4xx/5xx
+        OR a 2xx whose body isn't valid JSON/UTF-8) or a network exception (URLError/
+        OSError/TimeoutError); `_complete` maps all of them to an empty Completion → 合法回退.
         """
         data = json.dumps(body, ensure_ascii=False).encode("utf-8")
         last_exc: Exception | None = None
@@ -154,7 +159,15 @@ class _HttpBackend(LlmClient):
             try:
                 req = urllib.request.Request(url, data=data, headers=headers, method="POST")
                 with urllib.request.urlopen(req, timeout=self.timeout) as r:
-                    return json.loads(r.read().decode("utf-8"))
+                    raw = r.read()
+                try:
+                    return json.loads(raw.decode("utf-8"))
+                except (ValueError, UnicodeDecodeError) as e:
+                    # 2xx but body isn't valid JSON/UTF-8 (proxy interstitial, truncated
+                    # gateway response, text/plain error…): non-retriable, surfaced as
+                    # ApiError so _complete's fallback path catches it (not a raw ValueError
+                    # that would escape complete() and skip the warn + trace record).
+                    raise ApiError(f"响应体非合法 JSON：{e}", retriable=False) from None
             except urllib.error.HTTPError as e:
                 detail = ""
                 try:
@@ -177,6 +190,24 @@ class _HttpBackend(LlmClient):
             self._sleep_backoff(attempt)
         assert last_exc is not None
         raise last_exc
+
+    def _complete(self, *, url: str, headers_for, body: dict, parse) -> Completion:
+        """Shared key→POST→parse with the single fallback contract both backends rely on:
+        missing key OR any request failure → empty Completion (+ one-time warn), so
+        AgentBrain always lands on a legal default and the game never stalls (protocol §8).
+        Lives in ONE place so the OpenAI and Anthropic paths can't drift apart."""
+        try:
+            key = self._api_key()
+        except MissingApiKey as e:
+            self._warn_once(f"环境变量 {e.env} 未设置，本回合回退合法默认。"
+                            f"请先 export {e.env}=<你的API Key>。")
+            return Completion(text="", raw={"error": f"missing {e.env}"})
+        try:
+            obj = self._request(url, headers_for(key), body)
+        except (urllib.error.URLError, OSError, TimeoutError, ApiError) as e:
+            self._warn_once(f"云端模型调用失败，本回合回退合法默认：{e}")
+            return Completion(text="", raw={"error": str(e)})
+        return parse(obj)
 
 
 # ---------------------------------------------------------------------------
@@ -215,37 +246,32 @@ class OpenAICompatClient(_HttpBackend):
             "messages": [{"role": "system", "content": system}] + list(messages),
             "temperature": temperature,
             "max_tokens": max(max_tokens, self.max_tokens),
-            "stream": False,
+            "stream": False,  # 同步逐 ask 应答；故流式-only 模型（如百炼 QwQ 系）暂不支持，见预设注释
         }
         # 只对 choose/confirm 启用 json_object；speak 也带 schema({"speech":..})但绝不强制
         # 成 JSON（json_object 只约束“是合法 JSON”、不约束形状，会逼模型把发言裹成乱键）。
         props = (schema or {}).get("properties", {})
         if self.json_object and ("choice" in props or "decision" in props):
             body["response_format"] = {"type": "json_object"}
-        try:
-            key = self._api_key()
-        except MissingApiKey as e:
-            self._warn_once(f"环境变量 {e.env} 未设置，本回合回退合法默认。"
-                            f"请先 export {e.env}=<你的API Key>。")
-            return Completion(text="", raw={"error": f"missing {e.env}"})
-        headers = {"Content-Type": "application/json",
-                   "Authorization": f"Bearer {key}", **self.extra_headers}
-        try:
-            obj = self._request(self.base_url + "/chat/completions", headers, body)
-        except (urllib.error.URLError, OSError, TimeoutError, ApiError) as e:
-            self._warn_once(f"云端模型调用失败，本回合回退合法默认：{e}")
-            return Completion(text="", raw={"error": str(e)})
-        return self._parse(obj)
+        return self._complete(
+            url=self.base_url + "/chat/completions",
+            headers_for=lambda key: {"Content-Type": "application/json",
+                                     "Authorization": f"Bearer {key}", **self.extra_headers},
+            body=body, parse=self._parse)
 
     @staticmethod
-    def _parse(obj: dict) -> Completion:
+    def _parse(obj) -> Completion:
+        if not isinstance(obj, dict):  # 异常响应形态：稳妥回退（绝不抛进 AgentBrain）
+            return Completion(text="", raw={"error": "意外响应形态"})
         choices = obj.get("choices") or []
-        msg = (choices[0].get("message") if choices else {}) or {}
+        first = choices[0] if (choices and isinstance(choices[0], dict)) else {}
+        msg = first.get("message")
+        msg = msg if isinstance(msg, dict) else {}
         content = msg.get("content") or ""
         reasoning = msg.get("reasoning_content") or msg.get("reasoning")
         if reasoning:  # 推理模型：把思维链包回 <think> 供 brain 切分（绝不广播）
             content = f"<think>{reasoning}</think>{content}"
-        u = obj.get("usage") or {}
+        u = obj.get("usage") if isinstance(obj.get("usage"), dict) else {}
         usage = {"prompt_tokens": u.get("prompt_tokens"),
                  "completion_tokens": u.get("completion_tokens")}
         return Completion(text=content, raw=obj, usage=usage)
@@ -281,28 +307,21 @@ class AnthropicClient(_HttpBackend):
             "max_tokens": max(max_tokens, self.max_tokens),  # Anthropic：max_tokens 必填
             "temperature": temperature,
         }
-        try:
-            key = self._api_key()
-        except MissingApiKey as e:
-            self._warn_once(f"环境变量 {e.env} 未设置，本回合回退合法默认。"
-                            f"请先 export {e.env}=<你的API Key>。")
-            return Completion(text="", raw={"error": f"missing {e.env}"})
-        headers = {"Content-Type": "application/json", "x-api-key": key,
-                   "anthropic-version": self.anthropic_version}
-        try:
-            obj = self._request(self.base_url + "/messages", headers, body)
-        except (urllib.error.URLError, OSError, TimeoutError, ApiError) as e:
-            self._warn_once(f"云端模型调用失败，本回合回退合法默认：{e}")
-            return Completion(text="", raw={"error": str(e)})
-        return self._parse(obj)
+        return self._complete(
+            url=self.base_url + "/messages",
+            headers_for=lambda key: {"Content-Type": "application/json", "x-api-key": key,
+                                     "anthropic-version": self.anthropic_version},
+            body=body, parse=self._parse)
 
     @staticmethod
-    def _parse(obj: dict) -> Completion:
+    def _parse(obj) -> Completion:
+        if not isinstance(obj, dict):  # 异常响应形态：稳妥回退（绝不抛进 AgentBrain）
+            return Completion(text="", raw={"error": "意外响应形态"})
         # content 是 block 列表；拼接所有 text block（thinking block 不取 → 不广播）
         blocks = obj.get("content") or []
         text = "".join(b.get("text", "") for b in blocks
                        if isinstance(b, dict) and b.get("type") == "text")
-        u = obj.get("usage") or {}
+        u = obj.get("usage") if isinstance(obj.get("usage"), dict) else {}
         usage = {"prompt_tokens": u.get("input_tokens"),
                  "completion_tokens": u.get("output_tokens")}
         return Completion(text=text, raw=obj, usage=usage)

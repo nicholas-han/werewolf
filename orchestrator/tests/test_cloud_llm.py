@@ -194,6 +194,22 @@ class _FakeResp:
         return False
 
 
+class _RawResp:
+    """A 2xx response carrying arbitrary (possibly non-JSON) bytes."""
+
+    def __init__(self, raw: bytes):
+        self._b = raw
+
+    def read(self):
+        return self._b
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
 class RetryAndErrorTest(unittest.TestCase):
     def setUp(self):
         # no real sleeping during retry tests
@@ -244,6 +260,30 @@ class RetryAndErrorTest(unittest.TestCase):
             comp = self.c.complete("SYS", [{"role": "user", "content": "U"}])
         self.assertEqual(comp.text, "")  # 5xx after retries → legal fallback, game never stalls
 
+    def test_malformed_2xx_body_is_non_retriable_apierror(self):
+        # A 200 whose body isn't JSON must become a NON-retriable ApiError (not a raw
+        # ValueError that would escape complete() and skip the warn + trace record).
+        calls = {"n": 0}
+
+        def fake_urlopen(req, timeout=None):
+            calls["n"] += 1
+            return _RawResp(b"<html>gateway error</html>")
+
+        with mock.patch("orchestrator.cloud.urllib.request.urlopen", fake_urlopen):
+            with self.assertRaises(cloud.ApiError) as cm:
+                self.c._request("https://e/v1/chat/completions", {}, {"a": 1})
+        self.assertFalse(cm.exception.retriable)
+        self.assertEqual(calls["n"], 1)  # bad body is permanent — no retry
+
+    def test_complete_maps_malformed_body_to_empty(self):
+        def fake_urlopen(req, timeout=None):
+            return _RawResp(b"not json at all")
+
+        with mock.patch.dict("os.environ", {"K": "sk-test"}), \
+                mock.patch("orchestrator.cloud.urllib.request.urlopen", fake_urlopen):
+            comp = self.c.complete("SYS", [{"role": "user", "content": "U"}])
+        self.assertEqual(comp.text, "")  # malformed 200 → legal fallback, never crashes the seat
+
 
 class AnthropicClientTest(unittest.TestCase):
     def test_request_shape_and_parse(self):
@@ -262,6 +302,60 @@ class AnthropicClientTest(unittest.TestCase):
         # only text blocks are spoken; thinking blocks are dropped
         self.assertEqual(comp.text, "我跳预言家。")
         self.assertEqual(comp.usage, {"prompt_tokens": 5, "completion_tokens": 9})
+
+
+class AnthropicFallbackTest(unittest.TestCase):
+    """The Anthropic client duplicates no key/error logic now (shared _complete),
+    but its build path still deserves direct coverage of the fallback contract."""
+
+    def test_missing_key_falls_back_to_empty(self):
+        c = build_client("anthropic")
+        with mock.patch.dict("os.environ", {}, clear=True):
+            comp = c.complete("SYS", [{"role": "user", "content": "U"}])
+        self.assertEqual(comp.text, "")
+        self.assertIn("missing", comp.raw.get("error", ""))
+
+    def test_health_both_branches(self):
+        c = build_client("anthropic")
+        with mock.patch.dict("os.environ", {}, clear=True):
+            ok, msg = c.health()
+        self.assertFalse(ok)
+        self.assertIn("ANTHROPIC_API_KEY", msg)
+        with mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": "sk-ant"}):
+            ok2, msg2 = c.health()
+        self.assertTrue(ok2)
+        self.assertEqual(msg2, "ok")
+
+    def test_5xx_maps_to_empty(self):
+        c = AnthropicClient(model="claude-x", api_key_env="ANTHROPIC_API_KEY", max_retries=0)
+
+        def fake_urlopen(req, timeout=None):
+            raise urllib.error.HTTPError("https://api.anthropic.com/v1/messages", 503,
+                                         "x", {}, io.BytesIO(b"down"))
+
+        with mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": "sk-ant"}), \
+                mock.patch("orchestrator.cloud.urllib.request.urlopen", fake_urlopen):
+            comp = c.complete("SYS", [{"role": "user", "content": "U"}])
+        self.assertEqual(comp.text, "")
+
+
+class ParseGuardTest(unittest.TestCase):
+    """_parse must never raise (it runs after the protected request); any odd shape
+    → empty Completion so AgentBrain applies a legal default."""
+
+    def test_openai_parse_handles_odd_shapes(self):
+        self.assertEqual(OpenAICompatClient._parse(["weird"]).text, "")      # not a dict
+        self.assertEqual(OpenAICompatClient._parse({}).text, "")             # no choices
+        self.assertEqual(OpenAICompatClient._parse({"choices": ["x"]}).text, "")  # choice not a dict
+        self.assertEqual(OpenAICompatClient._parse(
+            {"choices": [{"message": {"content": None}}]}).text, "")         # null content
+
+    def test_anthropic_parse_handles_odd_shapes(self):
+        self.assertEqual(AnthropicClient._parse("nope").text, "")
+        self.assertEqual(AnthropicClient._parse({}).text, "")
+        # only text blocks are spoken; a thinking-only response yields no speech
+        self.assertEqual(AnthropicClient._parse(
+            {"content": [{"type": "thinking", "text": "secret"}]}).text, "")
 
 
 class FactoryWiringTest(unittest.TestCase):
