@@ -235,11 +235,20 @@ void Game::runWolfChat() {
         }
     }
     if (open.empty()) return;
-    for (int w : open) {
-        const Player* wp = state_.find(w);
-        std::string text = provider_.collectWolfChat(state_, w, open);
-        state_.recordSpeech(state_.day, SpeechKind::WolfChat, w, wp ? wp->seat() : 0,
-                            std::move(text));  // empty text is ignored by recordSpeech
+    // Up to wolfChatRounds_ rounds; natural收尾: stop once a whole round is all-pass
+    // (the provider returns "" when a wolf passes / has nothing to add).
+    for (int round = 1; round <= wolfChatRounds_; ++round) {
+        bool anySpoke = false;
+        for (int w : open) {
+            const Player* wp = state_.find(w);
+            std::string text = provider_.collectWolfChat(state_, w, open, round);
+            if (!text.empty()) {
+                anySpoke = true;
+                state_.recordSpeech(state_.day, SpeechKind::WolfChat, w, wp ? wp->seat() : 0,
+                                    std::move(text));
+            }
+        }
+        if (!anySpoke) break;  // nobody added anything this round -> discussion over
     }
 }
 

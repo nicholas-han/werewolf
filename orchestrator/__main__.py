@@ -107,6 +107,7 @@ def main() -> None:
     ap.add_argument("--model", default=None, help="Ollama 模型名；省略=启动时下拉选择")
     ap.add_argument("--ollama-host", default="http://localhost:11434")
     ap.add_argument("--timeout", type=int, default=600, help="单次模型调用软超时（秒）")
+    ap.add_argument("--wolf-chat-rounds", type=int, default=2, help="狼队夜聊最大轮数（默认2，整轮全过则提前结束）")
     ap.add_argument("--fake", action="store_true", help="等价于 --provider fake")
     ap.add_argument("--engine", default=None, help="werewolf 路径（默认 build/werewolf）")
     ap.add_argument("--out-dir", default=None, help="记录输出目录（默认 ./games）")
@@ -130,7 +131,7 @@ def main() -> None:
     kw: dict = {
         "board": board, "seed": args.seed, "human_seat": human,
         "provider": provider, "model": model, "ollama_host": args.ollama_host,
-        "request_timeout": args.timeout,
+        "request_timeout": args.timeout, "wolf_chat_rounds": args.wolf_chat_rounds,
     }
     if args.engine:
         kw["engine_path"] = args.engine

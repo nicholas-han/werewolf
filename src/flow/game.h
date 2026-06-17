@@ -33,11 +33,16 @@ public:
     GameResult run();
     const GameState& state() const { return state_; }
 
+    // §5.4: max rounds of wolf night chat (natural early-stop if a whole round is
+    // all-pass). Default 2; non-AI providers no-op the chat regardless.
+    void setWolfChatRounds(int rounds) { wolfChatRounds_ = rounds > 0 ? rounds : 1; }
+
 private:
     Board board_;
     DecisionProvider& provider_;
     GameState state_;
     Settlement settlement_;
+    int wolfChatRounds_ = 2;  // §5.4
 
     // Night deaths recorded but not yet announced (awaiting the day's 公布死讯).
     std::vector<int> pendingNightDeaths_;

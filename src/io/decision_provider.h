@@ -175,8 +175,8 @@ public:
     // mechanical effect (like daytime speech). Default no-op so non-AI providers
     // run no wolf chat at all (zero behaviour change).
     virtual std::string collectWolfChat(const GameState& state, int speakerId,
-                                        const std::vector<int>& openWolfIds) {
-        (void)state; (void)speakerId; (void)openWolfIds; return "";
+                                        const std::vector<int>& openWolfIds, int round) {
+        (void)state; (void)speakerId; (void)openWolfIds; (void)round; return "";
     }
 
     // Pacing hook for a human moderator (BRD M5 ⑤): block until the operator is

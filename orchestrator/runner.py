@@ -50,6 +50,7 @@ class Config:
     ollama_host: str = "http://localhost:11434"
     request_timeout: int = 600
     num_ctx: int = 8192
+    wolf_chat_rounds: int = 2  # §5.4: max wolf night-chat rounds (natural early-stop)
     # Optional explicit per-seat factory; overrides provider/model when set (tests).
     llm_factory: Optional[Callable[[int], LlmClient]] = None
 
@@ -178,7 +179,7 @@ class Orchestrator:
 
     def run(self) -> str:
         engine = EngineProcess(self.cfg.engine_path, self.cfg.board, self.cfg.seed,
-                               self.cfg.ask_timeout)
+                               self.cfg.ask_timeout, self.cfg.wolf_chat_rounds)
         try:
             for msg in engine.messages():
                 t = msg.get("t")

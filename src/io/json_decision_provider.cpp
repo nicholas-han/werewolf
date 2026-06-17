@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <map>
+#include <set>
 #include <string>
 
 #include "core/game_state.h"
@@ -47,6 +48,18 @@ const char* speechKindName(SpeechKind k) {
 
 bool contains(const std::vector<int>& v, int x) {
     return std::find(v.begin(), v.end(), x) != v.end();
+}
+
+// A wolf "passes" a chat round by saying nothing or 「过」-like (natural收尾, §5.4).
+bool isWolfChatPass(const std::string& raw) {
+    const std::size_t a = raw.find_first_not_of(" \t\r\n");
+    if (a == std::string::npos) return true;  // empty / whitespace
+    const std::size_t b = raw.find_last_not_of(" \t\r\n");
+    const std::string t = raw.substr(a, b - a + 1);
+    static const std::set<std::string> kPass = {
+        "过", "过。", "过.", "过~", "没有", "没有。", "没有了", "没有补充", "无", "略",
+        "略过", "跳过", "pass", "Pass", "PASS", "(过)", "（过）"};
+    return kPass.count(t) > 0;
 }
 
 }  // namespace
@@ -461,9 +474,14 @@ std::string JsonDecisionProvider::collectSpeech(const GameState& s, int speakerI
 }
 
 std::string JsonDecisionProvider::collectWolfChat(const GameState& s, int speakerId,
-                                                  const std::vector<int>& openWolfIds) {
+                                                  const std::vector<int>& openWolfIds, int round) {
     sync(s);
-    std::string text = askSpeak(s, speakerId, SpeechKind::WolfChat, "狼队私聊，请发言");
+    const std::string prompt =
+        (round <= 1) ? "狼队私聊，请发言"
+                     : "狼队私聊（第" + std::to_string(round) +
+                           "轮）：有要补充或回应队友的就说；没有就只回复「过」。";
+    std::string text = askSpeak(s, speakerId, SpeechKind::WolfChat, prompt);
+    if (isWolfChatPass(text)) text.clear();  // pass / 「过」 -> not broadcast or recorded
     if (!text.empty()) {
         jsonu::Obj d;
         d.num("speaker", speakerId).str("kind", "WolfChat");

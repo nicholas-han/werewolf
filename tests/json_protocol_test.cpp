@@ -142,7 +142,7 @@ TEST(JsonProtocol, WolfChatIsPrivateToWolvesNeverPublic) {
     }
     ASSERT_GE(openWolves.size(), 2u);
     JsonDecisionProvider p(in, out, "B", 1);
-    EXPECT_EQ(p.collectWolfChat(s, openWolves[0], openWolves), "今晚刀3号");
+    EXPECT_EQ(p.collectWolfChat(s, openWolves[0], openWolves, 1), "今晚刀3号");
     const std::string o = out.str();
     EXPECT_EQ(o.find("\"vis\":\"public\""), std::string::npos);  // never leaks publicly
     EXPECT_NE(o.find("\"kind\":\"WolfChat\""), std::string::npos);

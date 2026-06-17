@@ -88,7 +88,7 @@ std::optional<std::vector<RoleKind>> promptSetup(const Board& board, std::istrea
 // JSON-protocol mode (M15, docs/protocol_v1.md): the engine speaks the per-seat
 // protocol on stdin/stdout for an external orchestrator. No interactive prompts;
 // stdout carries ONLY protocol lines (debug goes to stderr).
-int runJson(int boardSel, unsigned seed, bool haveSeed) {
+int runJson(int boardSel, unsigned seed, bool haveSeed, int wolfChatRounds) {
     Board board = (boardSel == 3) ? makeBoard12_PsychicMechanic()
                   : (boardSel == 2) ? makeBoard12_GuardWolfGun()
                                     : makeBoard9_SeerWitchHunter();
@@ -99,6 +99,7 @@ int runJson(int boardSel, unsigned seed, bool haveSeed) {
     std::vector<RoleKind> seatRoles = randomDeal(board, seed);
     JsonDecisionProvider provider(std::cin, std::cout, board.name, seed);
     Game game(board, provider, seatRoles);
+    game.setWolfChatRounds(wolfChatRounds);
     provider.emitGameStart(game.state());
     provider.emitDeals(game.state());
     GameResult result = game.run();
@@ -115,6 +116,7 @@ int main(int argc, char** argv) {
     int boardSel = 1;
     unsigned seed = 0;
     bool haveSeed = false;
+    int wolfChatRounds = 2;
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         if (a == "--json") {
@@ -124,11 +126,13 @@ int main(int argc, char** argv) {
         } else if (a == "--seed" && i + 1 < argc) {
             seed = static_cast<unsigned>(std::strtoul(argv[++i], nullptr, 10));
             haveSeed = true;
+        } else if (a == "--wolf-chat-rounds" && i + 1 < argc) {
+            wolfChatRounds = std::atoi(argv[++i]);
         } else if (a == "--ask-timeout" && i + 1 < argc) {
             ++i;  // accepted for protocol compatibility; not enforced in v1
         }
     }
-    if (jsonMode) return runJson(boardSel, seed, haveSeed);
+    if (jsonMode) return runJson(boardSel, seed, haveSeed, wolfChatRounds);
 
     std::cout << "=== 狼人杀（法官控制台）===\n";
     std::cout << "选择板子：1) 9 人预女猎  2) 12 人预女猎守 + 狼枪  3) 12 人通灵机械狼\n> ";
