@@ -183,6 +183,12 @@ public:
     // ready to continue. No-op for scripted/bot providers.
     virtual void pause(const std::string& note) { (void)note; }
 
+    // Called by the engine right after it enters a new phase (Night/Day), BEFORE
+    // any banner/death narration. Lets a provider that tags events with day/phase
+    // refresh that metadata up front — otherwise transition narration emitted via
+    // notify() (which carries no GameState) would inherit the previous phase's tag.
+    virtual void onPhaseEnter(const GameState& state) { (void)state; }
+
     // Public broadcast for UI / observers / logging — everyone may see it (BRD
     // §11): banners, death announcements, vote tallies, etc.
     virtual void notify(const std::string& message) { (void)message; }

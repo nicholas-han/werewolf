@@ -62,6 +62,7 @@ public:
     void notifyPlayer(int playerId, const std::string& message) override;
     void notifyModerator(const std::string& message) override;
     void pause(const std::string& note) override;
+    void onPhaseEnter(const GameState& state) override { sync(state); }
 
 private:
     std::istream& in_;

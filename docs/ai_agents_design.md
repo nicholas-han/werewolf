@@ -18,7 +18,7 @@
 
 **已定运行参数（M15，详见对应小节）**：本地模型 **deepseek-r1:14b**（Ollama，§7.5）；**狼队私聊每晚刀前最多 2 轮（默认，自然收尾）**（§5.4）；**警长竞选候选人发言打开**（§5.6）；trace **全量记录**（token/延迟/非法输出/回退/`<think>` 推理，§8.2）；引擎 `ask` **可配软超时**（默认 600s，§4.7）。
 
-**核心不变量：C++ 引擎的规则/结算/胜负逻辑一行都不改。** 本里程碑新增的全部是 I/O 层（一个走 JSON 协议的 `DecisionProvider` + 一个结构化事件发射器）、两处纯增量的流程步骤（狼队私聊、打开候选人发言）、以及 C++ 之外的 orchestrator。现有 130 个 GoogleTest 全程保持绿。
+**核心不变量：C++ 引擎的规则/结算/胜负逻辑一行都不改。** 本里程碑新增的全部是 I/O 层（一个走 JSON 协议的 `DecisionProvider` + 一个结构化事件发射器）、两处纯增量的流程步骤（狼队私聊、打开候选人发言）、以及 C++ 之外的 orchestrator。现有 131 个 GoogleTest 全程保持绿。
 
 ---
 
@@ -187,6 +187,8 @@ JSON-lines（每行一个 JSON 对象，UTF-8，`\n` 分隔）。引擎与 orche
 ```
 
 `text` 由引擎用 `core/messages.h`（中文文案单一来源）渲染，orchestrator/终端直接打印——**不在 orchestrator 里重做文案**。`data` 给机器可读补充，让 brain 不必从中文里抠信息。
+
+**day/phase 标签必须对齐相位**：orchestrator 与 recorder 都按事件的 `day`/`phase` 把日志/script 分段。引擎在**进入每个相位时**（`runNight`/`runDay` 开头）先调 `DecisionProvider::onPhaseEnter(state)` 刷新这对标签、**再**发任何横幅/死讯。否则相位切换处经 `notify()`（其签名不带 `GameState`，无法自行同步）发出的首批叙述会沿用上一次 ask 的旧标签——例如「第 2 夜」横幅、黎明死讯会被错归到前一天/相位段，污染复盘 script 与 AI 的「按天」上下文。
 
 | `etype` | 典型 `vis` | 含义 | `data` 例 |
 | --- | --- | --- | --- |
@@ -450,7 +452,7 @@ parse_and_validate(out, ask):
 **R1 适配（务必照做，否则效果差）：**
 1. **不要用 system role**：DeepSeek 建议 R1 把所有指令放进 **user** 消息。`OllamaClient` 对 R1 做适配——把 `LlmClient.complete` 的 `system` **折叠进首条 user 消息**，而非走 system 字段。
 2. **解析 `<think>`，绝不把思考当发言**：模型先输出 `<think>…</think>` 再给答案。解析器**先切出 `<think>` 内容当作 `reasoning`**（存 trace、进自己记忆，**绝不广播**）。
-   - 对 **speak**：**只把 `</think>` 之后的正文当作要广播的发言**——`<think>` 里的推理（怀疑谁、要不要悍跳）**永远不进** `speak.text`。若模型只吐了 think、没给 think 外的正文，按 §7.4 回退（绝不把思考块直接发出去）。
+   - 对 **speak**：**只把 `</think>` 之后的正文当作要广播的发言**——`<think>` 里的推理（怀疑谁、要不要悍跳）**永远不进** `speak.text`。若模型只吐了 think、没给 think 外的正文，按 §7.4 回退（绝不把思考块直接发出去）。**鲁棒性：即便 `<think>` 被截断、没有闭合 `</think>`（输出超长被切，或某后端把推理内联流式输出），`_split_think` 也把从残留 `<think>` 起的整段当 reasoning 丢弃、绝不留在发言里**——否则截断的心里话会被当成发言广播，违反 §11。
    - 对 **choose/confirm**：`</think>` 之后取那行 JSON。
    - 这天然喂给「心里话 vs 明面」的分离（§7.3）。
 3. **结构化输出用 Ollama `format`**：把候选 `enum` 的 JSON schema 作为 `format` 下发，**强制 `content` 为合法 JSON 且 choice ∈ 合法候选**；因 Ollama 把思考放在独立 `thinking` 字段，**`format` 不抑制思考**。这从根本上消除了「R1 只思考不吐 JSON → 回退」。§7.4 的宽松解析 + 合法默认仍作最终兜底。
@@ -506,7 +508,7 @@ parse_and_validate(out, ask):
 - **引擎协议测试（C++/GoogleTest）**：给 `JsonDecisionProvider` 喂内存 istream（预设 reply 行）、捕获 ostream（断言 ask/event 序列与字段），跑完整局——和现有 `ScriptedDecisionProvider` 测试同构。
 - **狼队私聊流程测试（C++）**：断言私聊只对狼可见、不影响结算/胜负、机械狼不参与。
 - **候选人发言测试（C++）**：断言竞选阶段候选人发言被收集并以 public `speech` 广播；顺延竞选（第二天）无发言。
-- **既有 130 用例保持绿**：引擎规则零改动，新增皆为 io/流程增量。
+- **既有 131 用例保持绿**：引擎规则零改动，新增皆为 io/流程增量。
 - **AgentBrain（Python）**：用 `FakeLlmClient`（返回预设 JSON / 故意返回垃圾 / 模拟 R1 的 `<think>` 包裹）断言：合法时正确走子；垃圾时回退到合法默认；`<think>` 被正确切出当 reasoning。
 - **公平性断言（关键）**：跑一局后扫描每个 brain 收到的 view，断言其中**不含任何他座位的角色或私密结果**；扫描发给真人座位的内容，断言不含 `vis=moderator`。
 - **端到端（Python）**：启动真引擎子进程 + FakeLlmClient brains，断言整局完成、`god_script.md` 与 `trace.jsonl` 正确产出。
@@ -518,7 +520,7 @@ parse_and_validate(out, ask):
 > 每步可独立编译/测试通过再继续（项目约定：小步推进）。
 
 1. ✅ **冻结协议 v1**（[`protocol_v1.md`](protocol_v1.md)）。
-2. ✅ **引擎：EventSink + JsonDecisionProvider + `--json` 模式**（§5.1/5.2/5.5）。配协议测试，引擎规则零改动，全套用例保持绿（现 **130**）。
+2. ✅ **引擎：EventSink + JsonDecisionProvider + `--json` 模式**（§5.1/5.2/5.5）。配协议测试，引擎规则零改动，全套用例保持绿（现 **131**）。
 3. ✅ **引擎：狼队私聊（§5.4）+ 候选人发言（§5.6）+ 发言广播 `speech` 事件**。
 4. ✅ **Python orchestrator**：EngineProcess + AgentBrain + Recorder + Orchestrator 主循环；`FakeLlmClient` 端到端（整局完成 + 两份记录 + §11 公平性断言）。
 5. ✅ **LlmClient + OllamaClient(R1 适配) + AgentBrain**（§7）：接本地 deepseek-r1:14b——per-decision 已验证（真实选择 + 干净第一人称发言 + reasoning 入 trace、不外泄）。整局慢，挑时间跑；管线/调试用 `--fake`。

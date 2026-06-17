@@ -37,13 +37,22 @@ _ROLE_HINTS = {
 
 
 def _split_think(text: str) -> tuple[str, str]:
-    """Return (reasoning, answer): strip a leading <think>…</think> (R1)."""
-    m = _THINK.search(text)
-    if not m:
-        return "", text.strip()
-    reasoning = m.group(1).strip()
-    answer = (text[: m.start()] + text[m.end():]).strip()
-    return reasoning, answer
+    """Return (reasoning, answer): strip <think>…</think> blocks (R1).
+
+    §11: think content must NEVER reach the broadcast answer. Besides closed
+    blocks, an UNTERMINATED <think> (truncated output, or a backend that streams
+    reasoning inline) must also be removed — drop everything from the stray
+    <think> onward into reasoning so it can't leak into a spoken line.
+    """
+    reasoning = [r.strip() for r in _THINK.findall(text) if r.strip()]
+    answer = _THINK.sub("", text)
+    open_idx = answer.find("<think>")
+    if open_idx != -1:
+        tail = answer[open_idx + len("<think>"):].strip()
+        if tail:
+            reasoning.append(tail)
+        answer = answer[:open_idx]
+    return " ".join(reasoning).strip(), answer.strip()
 
 
 @dataclass

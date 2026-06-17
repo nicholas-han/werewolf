@@ -269,6 +269,38 @@ TEST(JsonProtocol, EofGameRunsToCompletionAndEmitsFrames) {
     EXPECT_GT(allLinesParse(s), 10);  // many protocol lines, all valid JSON
 }
 
+// Phase-transition banners must carry the phase they announce, not the previous
+// ask's stale tag — the engine syncs the provider on phase entry (onPhaseEnter).
+TEST(JsonProtocol, PhaseBannersCarryCorrectPhaseTag) {
+    std::istringstream in;  // EOF -> all fallbacks, game runs to completion
+    std::ostringstream out;
+    Board board = makeBoard9_SeerWitchHunter();
+    JsonDecisionProvider provider(in, out, board.name, 4242);
+    Game game(board, provider, randomDeal(board, 4242));
+    provider.emitGameStart(game.state());
+    game.run();
+
+    std::istringstream ls(out.str());
+    std::string line;
+    int checkedNight = 0, checkedDay = 0;
+    while (std::getline(ls, line)) {
+        auto v = jsonu::parse(line);
+        ASSERT_TRUE(v.has_value());
+        const jsonu::Value* txt = v->get("text");
+        const jsonu::Value* phase = v->get("phase");
+        if (!txt || !txt->isStr() || !phase || !phase->isStr()) continue;
+        if (txt->s.find("天黑请闭眼") != std::string::npos) {
+            EXPECT_EQ(phase->s, "Night") << "night banner mis-tagged: " << line;
+            ++checkedNight;
+        } else if (txt->s.find("天亮了") != std::string::npos) {
+            EXPECT_EQ(phase->s, "Day") << "day banner mis-tagged: " << line;
+            ++checkedDay;
+        }
+    }
+    EXPECT_GE(checkedNight, 2);  // at least nights 1 & 2 — exercises a transition
+    EXPECT_GE(checkedDay, 1);
+}
+
 // Deal events must be private + role-bearing; a public line must never leak a role.
 TEST(JsonProtocol, DealsArePrivateAndRolesNotPublic) {
     std::istringstream in;

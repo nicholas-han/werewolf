@@ -43,6 +43,14 @@ class BrainParseTest(unittest.TestCase):
         self.assertEqual(reply["text"], "我跳预言家！")
         self.assertNotIn("<think>", reply["text"])
 
+    def test_speak_never_leaks_unterminated_think(self):
+        # Truncated reasoning (no closing </think>) must NOT be broadcast (§11).
+        b = _brain("<think>我是狼人，应该悍跳预言家骗信任，刀掉真预言")
+        reply, _ = b.answer({"t": "ask", "id": 1, "seat": 6, "qtype": "speak", "kind": "Statement"})
+        self.assertNotIn("<think>", reply["text"])
+        self.assertNotIn("我是狼人", reply["text"])  # reasoning stripped, not spoken
+        self.assertEqual(reply["text"], "")           # nothing left to say -> 过
+
     def test_choose_valid(self):
         b = _brain('<think>…</think>{"choice": 5}')
         ask = {"t": "ask", "id": 1, "seat": 6, "qtype": "choose", "kind": "Vote",

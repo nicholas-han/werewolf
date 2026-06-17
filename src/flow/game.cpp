@@ -261,6 +261,7 @@ void Game::runWolfChat() {
 }
 
 GameResult Game::runNight() {
+    provider_.onPhaseEnter(state_);  // refresh day/phase tags before any narration
     provider_.notify(txt::nightBanner(state_.day));
 
     for (Player& p : state_.players) {
@@ -746,6 +747,7 @@ std::optional<int> Game::resolveExile() {
 }
 
 GameResult Game::runDay() {
+    provider_.onPhaseEnter(state_);  // refresh day/phase tags before any narration
     provider_.notify(txt::dayBanner(state_.day));
     provider_.notifyModerator(moderatorStatus());  // ④ status board (god-view, §11)
 
