@@ -9,6 +9,9 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Debug CACHE STRING "" FORCE)
 endif()
 
+# JsonDecisionProvider runs a background stdin reader for the §8 soft ask-timeout.
+find_package(Threads REQUIRED)
+
 # --- Core engine library (domain-agnostic-ish core + werewolf domain, M0) ---
 add_library(werewolf_core
     src/core/roles/role.cpp
@@ -27,6 +30,7 @@ add_library(werewolf_core
 )
 target_include_directories(werewolf_core PUBLIC src)
 target_compile_features(werewolf_core PUBLIC cxx_std_20)
+target_link_libraries(werewolf_core PUBLIC Threads::Threads)
 
 # --- Command-line app (M4) ---
 add_executable(werewolf src/app/main.cpp)

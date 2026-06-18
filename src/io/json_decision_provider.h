@@ -1,9 +1,12 @@
 #pragma once
 
+#include <chrono>
 #include <istream>
+#include <memory>
 #include <optional>
 #include <ostream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "flow/win_condition.h"  // GameResult
@@ -23,9 +26,20 @@
 // the engine falls back to a legal default so a game always terminates (§8).
 namespace ww {
 
+// Background-reader plumbing for the soft `ask` timeout (defined in the .cpp).
+struct JsonReplyChannel;
+
 class JsonDecisionProvider : public DecisionProvider {
 public:
     JsonDecisionProvider(std::istream& in, std::ostream& out, std::string boardName, unsigned seed);
+    ~JsonDecisionProvider() override;
+
+    // Soft per-`ask` timeout (docs/protocol_v1.md §8). After emitting an `ask`, the
+    // engine waits at most this long for the matching `reply`; on timeout it falls
+    // back to the same legal default used for malformed/EOF replies so a game can
+    // never hang on a dead/silent orchestrator. <= 0 disables the timeout (wait
+    // indefinitely, the pre-timeout behavior). Default 600s.
+    void setAskTimeout(std::chrono::milliseconds timeout) { askTimeout_ = timeout; }
 
     // Driver hooks (called by app/main.cpp around Game::run): the roster, the
     // private per-seat deal, and the final result.
@@ -74,8 +88,19 @@ private:
     int curDay_ = 1;
     std::string curPhase_ = "Night";
 
+    // Soft-timeout machinery. A single background thread drains `in_` into
+    // `replyCh_` so the main (engine) thread can wait for a reply with a deadline
+    // instead of blocking forever in getline. `timedOut_` records whether the last
+    // readReply() fell back because of a timeout (vs EOF / a real reply).
+    std::chrono::milliseconds askTimeout_{std::chrono::seconds(600)};
+    std::shared_ptr<JsonReplyChannel> replyCh_;
+    std::thread reader_;
+    bool readerStarted_ = false;
+    bool timedOut_ = false;
+
     void writeLine(const std::string& s);
-    jsonu::Value readReply();
+    void ensureReader();        // lazily spawn the background stdin reader
+    jsonu::Value readReply();   // blocks up to askTimeout_; Null = no usable reply
     void sync(const GameState& s);
 
     std::string nameOf(const GameState&, int id) const;
@@ -90,6 +115,9 @@ private:
 
     void emitDecision(int seat, const char* kind, std::optional<int> target);
     void emitNarration(Vis vis, std::optional<int> seat, const std::string& text);
+    // Moderator-only note that `kind` for `seat` fell back due to a reply timeout
+    // (§8). Emitted alongside the normal fallback so the god-script records why.
+    void emitTimeoutFallback(int seat, const char* kind);
 };
 
 }  // namespace ww

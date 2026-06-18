@@ -2,7 +2,10 @@
 
 #include <algorithm>
 #include <climits>
+#include <condition_variable>
+#include <deque>
 #include <map>
+#include <mutex>
 #include <set>
 #include <string>
 
@@ -11,6 +14,17 @@
 #include "core/player.h"
 
 namespace ww {
+
+// Thread-safe hand-off between the background stdin reader and the engine thread.
+// The reader pushes each raw line; readReply() pops with a deadline. Wrapped in a
+// shared_ptr so a reader still blocked in getline at shutdown (an orchestrator
+// that hangs while holding the pipe open) can be safely detached.
+struct JsonReplyChannel {
+    std::mutex m;
+    std::condition_variable cv;
+    std::deque<std::string> lines;
+    bool eof = false;  // reader saw EOF / stream failure and has stopped
+};
 
 namespace {
 
@@ -69,6 +83,58 @@ JsonDecisionProvider::JsonDecisionProvider(std::istream& in, std::ostream& out,
                                            std::string boardName, unsigned seed)
     : in_(in), out_(out), sink_(out), boardName_(std::move(boardName)), seed_(seed) {}
 
+JsonDecisionProvider::~JsonDecisionProvider() {
+    if (!readerStarted_) return;
+    // The reader may still be blocked in getline on a live-but-silent stream (an
+    // orchestrator that stops answering while keeping the pipe open). Joining then
+    // would hang the engine's own shutdown — the very failure mode we hardened
+    // against. So give it a brief grace period to observe EOF (the common case:
+    // closed pipe / drained finite stream) and join cleanly; otherwise detach and
+    // let process exit reap it. std::cin outlives the process, and tests close
+    // their stream before teardown, so the detach path is safe from use-after-free.
+    {
+        std::unique_lock<std::mutex> lk(replyCh_->m);
+        replyCh_->cv.wait_for(lk, std::chrono::seconds(1), [&] { return replyCh_->eof; });
+    }
+    bool finished;
+    {
+        std::lock_guard<std::mutex> lk(replyCh_->m);
+        finished = replyCh_->eof;
+    }
+    if (finished) {
+        reader_.join();
+    } else {
+        reader_.detach();
+    }
+}
+
+void JsonDecisionProvider::ensureReader() {
+    if (readerStarted_) return;
+    readerStarted_ = true;
+    replyCh_ = std::make_shared<JsonReplyChannel>();
+    // Capture the channel by shared_ptr (survives detach) and the stream by
+    // pointer. The reader is the sole consumer of in_; the engine thread never
+    // touches in_ once the reader is running.
+    std::shared_ptr<JsonReplyChannel> ch = replyCh_;
+    std::istream* in = &in_;
+    reader_ = std::thread([ch, in] {
+        std::string line;
+        while (std::getline(*in, line)) {
+            {
+                std::lock_guard<std::mutex> lk(ch->m);
+                ch->lines.push_back(std::move(line));
+            }
+            ch->cv.notify_one();
+            line.clear();
+        }
+        {
+            std::lock_guard<std::mutex> lk(ch->m);
+            ch->eof = true;
+        }
+        ch->cv.notify_all();
+    });
+}
+
 void JsonDecisionProvider::writeLine(const std::string& s) {
     out_ << s << "\n";
     out_.flush();
@@ -110,16 +176,38 @@ int JsonDecisionProvider::wolfRepresentative(const GameState& state) const {
 }
 
 jsonu::Value JsonDecisionProvider::readReply() {
-    std::string line;
-    while (std::getline(in_, line)) {
-        if (line.empty()) continue;
-        std::optional<jsonu::Value> v = jsonu::parse(line);
-        if (!v) continue;
-        const jsonu::Value* t = v->get("t");
-        if (t && t->isStr() && t->s == "reply") return *v;
-        // ignore any other line type (the orchestrator only sends replies)
+    timedOut_ = false;
+    ensureReader();
+
+    const bool bounded = askTimeout_.count() > 0;
+    const auto deadline = std::chrono::steady_clock::now() + askTimeout_;
+    std::unique_lock<std::mutex> lk(replyCh_->m);
+    for (;;) {
+        auto ready = [&] { return !replyCh_->lines.empty() || replyCh_->eof; };
+        if (bounded) {
+            if (!replyCh_->cv.wait_until(lk, deadline, ready)) {
+                timedOut_ = true;     // soft timeout (§8) -> caller falls back to a legal default
+                return jsonu::Value{};
+            }
+        } else {
+            replyCh_->cv.wait(lk, ready);
+        }
+        if (replyCh_->lines.empty()) {
+            return jsonu::Value{};    // EOF / dead orchestrator -> Null = no reply
+        }
+        std::string line = std::move(replyCh_->lines.front());
+        replyCh_->lines.pop_front();
+        lk.unlock();
+        if (!line.empty()) {
+            std::optional<jsonu::Value> v = jsonu::parse(line);
+            if (v) {
+                const jsonu::Value* t = v->get("t");
+                if (t && t->isStr() && t->s == "reply") return *v;
+                // any other line type is ignored (the orchestrator only sends replies)
+            }
+        }
+        lk.lock();  // not a usable reply -> keep waiting, honoring the same deadline
     }
-    return jsonu::Value{};  // Null = EOF / no reply
 }
 
 void JsonDecisionProvider::emitNarration(Vis vis, std::optional<int> seat, const std::string& text) {
@@ -146,6 +234,21 @@ void JsonDecisionProvider::emitDecision(int seat, const char* kind, std::optiona
     e.phase = curPhase_;
     e.text = std::string("【上帝】#") + std::to_string(seat) + " " + kind +
              (target ? (" -> #" + std::to_string(*target)) : "（无/跳过）");
+    sink_.emit(e);
+}
+
+void JsonDecisionProvider::emitTimeoutFallback(int seat, const char* kind) {
+    const long long secs = askTimeout_.count() / 1000;
+    jsonu::Obj d;
+    d.num("seat", seat).str("kind", kind).boolean("timeout", true).num("timeoutSec", secs);
+    Event e;
+    e.vis = Vis::Moderator;  // god-script only; never reaches a brain or player (no leak)
+    e.etype = "decision";
+    e.dataJson = d.dump();
+    e.day = curDay_;
+    e.phase = curPhase_;
+    e.text = std::string("【上帝】#") + std::to_string(seat) + " " + kind + " 等待回复超时（" +
+             std::to_string(secs) + "s），回退到合法默认";
     sink_.emit(e);
 }
 
@@ -180,6 +283,7 @@ std::optional<int> JsonDecisionProvider::askChoose(const GameState& s, int seat,
     writeLine(a.dump());
 
     jsonu::Value r = readReply();
+    if (timedOut_) emitTimeoutFallback(seat, askKindName(kind));
     std::optional<int> result;
     const jsonu::Value* c = r.get("choice");
     if (r.isNull() || !c) {
@@ -209,6 +313,7 @@ bool JsonDecisionProvider::askConfirm(const GameState& s, int seat, AskKind kind
     writeLine(a.dump());
 
     jsonu::Value r = readReply();
+    if (timedOut_) emitTimeoutFallback(seat, askKindName(kind));
     const jsonu::Value* d = r.get("decision");
     const bool decision = (d && d->isBool()) ? d->b : false;  // default false (conservative)
     if (logMod) {
@@ -238,6 +343,7 @@ std::string JsonDecisionProvider::askSpeak(const GameState& s, int seat, SpeechK
     writeLine(a.dump());
 
     jsonu::Value r = readReply();
+    if (timedOut_) emitTimeoutFallback(seat, speechKindName(sk));
     const jsonu::Value* tv = r.get("text");
     return (tv && tv->isStr()) ? tv->s : std::string();
 }

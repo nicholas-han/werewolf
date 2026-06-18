@@ -1,3 +1,4 @@
+#include <chrono>
 #include <cstdlib>
 #include <iostream>
 #include <map>
@@ -88,7 +89,8 @@ std::optional<std::vector<RoleKind>> promptSetup(const Board& board, std::istrea
 // JSON-protocol mode (M15, docs/protocol_v1.md): the engine speaks the per-seat
 // protocol on stdin/stdout for an external orchestrator. No interactive prompts;
 // stdout carries ONLY protocol lines (debug goes to stderr).
-int runJson(int boardSel, unsigned seed, bool haveSeed, int wolfChatRounds, bool speechInterrupts) {
+int runJson(int boardSel, unsigned seed, bool haveSeed, int wolfChatRounds, bool speechInterrupts,
+            long askTimeoutSec) {
     Board board = (boardSel == 3) ? makeBoard12_PsychicMechanic()
                   : (boardSel == 2) ? makeBoard12_GuardWolfGun()
                                     : makeBoard9_SeerWitchHunter();
@@ -98,6 +100,7 @@ int runJson(int boardSel, unsigned seed, bool haveSeed, int wolfChatRounds, bool
     }
     std::vector<RoleKind> seatRoles = randomDeal(board, seed);
     JsonDecisionProvider provider(std::cin, std::cout, board.name, seed);
+    provider.setAskTimeout(std::chrono::seconds(askTimeoutSec));  // §8 soft timeout
     Game game(board, provider, seatRoles);
     game.setWolfChatRounds(wolfChatRounds);
     game.setSpeechInterrupts(speechInterrupts);
@@ -119,6 +122,7 @@ int main(int argc, char** argv) {
     bool haveSeed = false;
     int wolfChatRounds = 2;
     bool interrupts = false;
+    long askTimeoutSec = 600;  // §8 soft timeout default; <=0 disables (wait indefinitely)
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         if (a == "--json") {
@@ -133,10 +137,11 @@ int main(int argc, char** argv) {
         } else if (a == "--interrupts") {
             interrupts = true;
         } else if (a == "--ask-timeout" && i + 1 < argc) {
-            ++i;  // accepted for protocol compatibility; not enforced in v1
+            askTimeoutSec = std::atol(argv[++i]);  // §8: seconds; soft fallback on hang
         }
     }
-    if (jsonMode) return runJson(boardSel, seed, haveSeed, wolfChatRounds, interrupts);
+    if (jsonMode)
+        return runJson(boardSel, seed, haveSeed, wolfChatRounds, interrupts, askTimeoutSec);
 
     std::cout << "=== 狼人杀（法官控制台）===\n";
     std::cout << "选择板子：1) 9 人预女猎  2) 12 人预女猎守 + 狼枪  3) 12 人通灵机械狼\n> ";
