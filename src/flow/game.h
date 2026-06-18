@@ -117,6 +117,14 @@ private:
 
     std::vector<int> aliveIds() const;
     std::vector<int> aliveWolfIds() const;
+
+    // §7.2: the sheriff election runs BEFORE 公布死讯, so a player who died last night
+    // but isn't announced yet still "appears alive" — they run/speak/vote like anyone
+    // else and may even win the badge (which then transfers on the reveal, §7.6).
+    // Excluding them would also leak who died before the official reveal (§11).
+    // Participant set = alive ∪ not-yet-announced night dead (`pendingNightDeaths_`).
+    std::vector<int> electionParticipantIds() const;
+    bool appearsAlive(int id) const;  // alive OR a pending (un-announced) night death
 };
 
 }  // namespace ww

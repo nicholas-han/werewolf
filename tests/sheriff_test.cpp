@@ -218,3 +218,95 @@ TEST(Sheriff, DeferredFromPkCarriesOnlyPkCandidates) {
     ASSERT_TRUE(game.state().sheriffId.has_value());
     EXPECT_EQ(*game.state().sheriffId, 3);  // PK candidate won via the carried list
 }
+
+// ---------- Night-dead take part in the election (BRD §7.2/§7.4/§11) ----------
+
+TEST(Sheriff, NightDeadRunsWinsThenBadgeFlowsOnReveal) {
+    // The day-1 election runs BEFORE 公布死讯, so a player killed last night still
+    // "appears alive" and may run/win (§7.2/§7.4); skipping them would also leak who
+    // died before the official reveal (§11). Here the night-1 victim (seat 5) is the
+    // ONLY one who stands -> auto-elected; THEN the dawn reveal announces the death
+    // and the badge transfers to a living player (§7.6). Under the old bug seat 5 was
+    // excluded from the roster entirely, so nobody could have been elected.
+    ScriptedDecisionProvider dp;
+    dp.nightKills = {5, 3, 4};                              // n1 kills the would-be sheriff
+    dp.runForSheriff = {false, false, false, false, true};  // only night-dead seat 5 stands
+    dp.badgeTransfers = {4};                                // dead P5 hands the badge to P4
+
+    Game game(mkBoard("night-dead", {{RoleKind::Werewolf, 1}, {RoleKind::Civilian, 4}}), dp);
+    EXPECT_EQ(game.run(), GameResult::WolfWins);
+
+    // Night-dead seat 5 was actually elected — impossible if the election skipped it.
+    EXPECT_TRUE(hasEvent(dp, txt::becomesSheriff("P5")));
+    // …and the election finished BEFORE the death was announced (§7.2 / §11 no-leak).
+    auto elected = std::find(dp.events.begin(), dp.events.end(), txt::becomesSheriff("P5"));
+    auto reveal = std::find(dp.events.begin(), dp.events.end(), txt::outNoCause("P5"));
+    ASSERT_NE(elected, dp.events.end());
+    ASSERT_NE(reveal, dp.events.end());
+    EXPECT_LT(elected - dp.events.begin(), reveal - dp.events.begin());
+    // On the reveal the dead holder's badge transfers to a living player (§7.6).
+    EXPECT_TRUE(hasEvent(dp, txt::badgeTransferred("P4")));
+    EXPECT_FALSE(game.state().find(5)->isAlive());
+}
+
+TEST(Sheriff, DeferredDay2NightDeadStillParticipates) {
+    // §7.2/§7.5: the day-2 DEFERRED election (after a day-1 self-destruct) ALSO runs
+    // before 公布死讯 — so a player killed on NIGHT 2 still "appears alive" and takes
+    // part. Day 1: wolf seat 1 self-destructs -> defer (情形A, no PK). Night 2 kills
+    // civ seat 5. Day 2: seat 5 (night-dead) re-registers, is the sole candidate ->
+    // auto-elected; THEN the death is announced and the badge transfers (§7.6). This
+    // proves the fix is consistent across BOTH days, not just day 1.
+    ScriptedDecisionProvider dp;
+    dp.runForSheriff = {/*day1 seats 1-5*/ false, false, true, false, false,
+                        /*day2 participants 2,3,4,5*/ false, false, false, true};  // only night-dead seat5
+    dp.selfDestructs = {1};                        // day-1: wolf seat1 self-destructs -> defer
+    dp.nightKills = {std::nullopt, 5, 3};          // n1 空刀; n2 kills seat5; n3 kills seat3 -> WolfWins
+    dp.badgeTransfers = {4};                        // dead P5 hands the badge to P4
+
+    Game game(mkBoard("defer-night-dead", {{RoleKind::Werewolf, 2}, {RoleKind::Civilian, 3}}), dp);
+    EXPECT_EQ(game.run(), GameResult::WolfWins);
+
+    // Night-2-dead seat 5 took part in the DEFERRED election and won — impossible if skipped.
+    EXPECT_TRUE(hasEvent(dp, txt::becomesSheriff("P5")));
+    // The deferred election also finished BEFORE the night-2 death was announced.
+    auto elected = std::find(dp.events.begin(), dp.events.end(), txt::becomesSheriff("P5"));
+    auto reveal = std::find(dp.events.begin(), dp.events.end(), txt::outNoCause("P5"));
+    ASSERT_NE(elected, dp.events.end());
+    ASSERT_NE(reveal, dp.events.end());
+    EXPECT_LT(elected - dp.events.begin(), reveal - dp.events.begin());
+    EXPECT_TRUE(hasEvent(dp, txt::badgeTransferred("P4")));
+    EXPECT_FALSE(game.state().find(5)->isAlive());
+}
+
+TEST(Sheriff, PkSurvivorIsNightDeadBadgeTransfersOnReveal) {
+    // §7.4 PK 塌缩 + §7.6: a night-dead player (seat 6) "appears alive", runs, and ties
+    // into the runoff; the OTHER finalist (wolf seat 2) self-destructs, so seat 6 auto-
+    // wins. The win must be decided BEFORE 公布死讯 so that when seat 6 is then revealed
+    // dead, its badge transfers to a LIVING player (here P4). Regression for the order
+    // bug where announceThenSelfDestruct revealed seat 6 first, leaving the badge stranded
+    // on a corpse with no transfer.
+    ScriptedDecisionProvider dp;
+    dp.runForSheriff = {false, true, false, false, false, true};  // seats 2 (wolf) & 6 (night-dead) stand
+    dp.sheriffVotes = {2, 2, 6, 6};            // voters {1,3,4,5}: 2-2 tie -> runoff {2,6}
+    dp.selfDestructs = {std::nullopt, 2};      // no SD in the after-speech window; wolf seat2 SD in the PK
+    dp.withdraws = {false, false};             // after-speech withdraw window for candidates {2,6}
+    dp.nightKills = {6, 3, 5};                 // n1 kills the would-be PK winner; n2,n3 -> WolfWins
+    dp.badgeTransfers = {4};                   // revealed-dead sheriff P6 hands the badge to living P4
+
+    Game game(mkBoard("pk-night-dead", {{RoleKind::Werewolf, 2}, {RoleKind::Civilian, 4}}), dp);
+    EXPECT_EQ(game.run(), GameResult::WolfWins);
+
+    // Seat 6 (night-dead) auto-won the PK when wolf seat 2 blew up (§7.4 先定出警长).
+    EXPECT_TRUE(hasEvent(dp, txt::becomesSheriff("P6")));
+    auto elected = std::find(dp.events.begin(), dp.events.end(), txt::becomesSheriff("P6"));
+    auto reveal = std::find(dp.events.begin(), dp.events.end(), txt::outNoCause("P6"));
+    ASSERT_NE(elected, dp.events.end());
+    ASSERT_NE(reveal, dp.events.end());
+    EXPECT_LT(elected - dp.events.begin(), reveal - dp.events.begin());  // elect BEFORE reveal
+    // KEY: the badge moved off the revealed-dead winner to a LIVING player (§7.6) —
+    // under the order bug no transfer happened and the badge stayed on the corpse.
+    EXPECT_TRUE(hasEvent(dp, txt::badgeTransferred("P4")));
+    ASSERT_TRUE(game.state().sheriffId.has_value());
+    EXPECT_EQ(*game.state().sheriffId, 4);
+    EXPECT_TRUE(game.state().find(4)->isAlive());
+}
