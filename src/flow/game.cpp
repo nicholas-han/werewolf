@@ -100,6 +100,23 @@ std::vector<int> Game::aliveWolfIds() const {
     return ids;
 }
 
+std::vector<int> Game::electionParticipantIds() const {
+    // §7.2/§11: alive ∪ not-yet-announced night dead, in seat order. The day-1 (and
+    // day-2 deferred) election runs before 公布死讯, so the night-dead still "appear
+    // alive" and take part — skipping them would leak who died before the reveal.
+    std::vector<int> ids;
+    for (const Player& p : state_.players) {
+        if (p.isAlive() || contains(pendingNightDeaths_, p.id())) ids.push_back(p.id());
+    }
+    return ids;
+}
+
+bool Game::appearsAlive(int id) const {
+    const Player* p = state_.find(id);
+    if (p == nullptr) return false;
+    return p->isAlive() || contains(pendingNightDeaths_, id);
+}
+
 GameResult Game::announceNightBatch(std::vector<Player*> dead, GameResult decided) {
     provider_.notify(txt::announceHeader());
     if (dead.size() > 1) provider_.notify(txt::deathOrderDisclaimer());  // §5.2 公布顺序
@@ -435,7 +452,9 @@ Game::ElectionOutcome Game::resolveElectionSelfDestruct(int sd, const std::vecto
 
 Game::ElectionOutcome Game::runDeferredElection() {
     provider_.notify(txt::electionDeferred());  // §7.5: 顺延，仅投票（无发言）
-    const std::vector<int> alive = aliveIds();
+    // §7.2/§11: the deferred vote also precedes 公布死讯, so night-dead-but-unannounced
+    // players still appear alive and take part (re-register / vote) on day 2 as well.
+    const std::vector<int> participants = electionParticipantIds();
     const bool fromPk = !deferredPkCandidates_.empty();
 
     // Candidates (§7.5): interrupted AT the PK (情形 B) -> carry only the still-alive
@@ -443,12 +462,13 @@ Game::ElectionOutcome Game::runDeferredElection() {
     // re-decides 上警 (no speeches).
     std::vector<int> candidates;
     if (fromPk) {
+        // §7.5 情形B: carry only day-1 PK candidates. A self-destructed (announced-out)
+        // one is dropped; a night-dead-but-unannounced one still appears alive -> stays.
         for (int id : deferredPkCandidates_) {
-            const Player* p = state_.find(id);
-            if (p && p->isAlive()) candidates.push_back(id);
+            if (appearsAlive(id)) candidates.push_back(id);
         }
     } else {
-        for (int id : alive) {
+        for (int id : participants) {
             if (provider_.chooseRunForSheriff(state_, id)) candidates.push_back(id);
         }
     }
@@ -460,7 +480,7 @@ Game::ElectionOutcome Game::runDeferredElection() {
         provider_.notify(txt::noSheriffNobodyRan());
         return {GameResult::Ongoing, false};
     }
-    if (!fromPk && candidates.size() == alive.size()) {  // §7.3 全员上警 -> badge lost
+    if (!fromPk && candidates.size() == participants.size()) {  // §7.3 全员上警 -> badge lost
         electionResolved_ = true;
         electionDeferred_ = false;
         provider_.notify(txt::badgeLostEveryoneRan());
@@ -491,7 +511,7 @@ Game::ElectionOutcome Game::runDeferredElection() {
     provider_.notify(txt::sheriffCandidates(joinNames(state_, candidates)));
     std::map<int, double> counts;
     std::string ballots;
-    for (int v : alive) {
+    for (int v : participants) {
         if (contains(candidates, v)) continue;
         std::optional<int> pick = provider_.chooseSheriffVote(state_, v, candidates);
         if (!(pick && contains(candidates, *pick))) pick.reset();
@@ -514,11 +534,13 @@ Game::ElectionOutcome Game::runSheriffElection() {
     if (electionDeferred_) return runDeferredElection();  // §7.5 day-2 vote-only
 
     provider_.notify(txt::electionBegin());
-    const std::vector<int> alive = aliveIds();
+    // §7.2: election precedes 公布死讯 — night-dead-but-unannounced players still take
+    // part (run/speak/vote), so participants = alive ∪ pending night dead (§11 no-leak).
+    const std::vector<int> participants = electionParticipantIds();
 
     // 1. Stand for sheriff (§7.2).
     std::vector<int> candidates;
-    for (int id : alive) {
+    for (int id : participants) {
         if (provider_.chooseRunForSheriff(state_, id)) candidates.push_back(id);
     }
 
@@ -528,7 +550,7 @@ Game::ElectionOutcome Game::runSheriffElection() {
         provider_.notify(txt::noSheriffNobodyRan());
         return {GameResult::Ongoing, false};
     }
-    if (candidates.size() == alive.size()) {  // §7.3: everyone ran -> badge lost
+    if (candidates.size() == participants.size()) {  // §7.3: everyone ran -> badge lost
         electionResolved_ = true;
         electionDeferred_ = false;
         provider_.notify(txt::badgeLostEveryoneRan());
@@ -612,7 +634,7 @@ Game::ElectionOutcome Game::runSheriffElection() {
     provider_.notify(txt::sheriffCandidates(joinNames(state_, remaining)));
 
     std::vector<int> firstVoters;
-    for (int id : alive) {
+    for (int id : participants) {
         if (!contains(candidates, id)) firstVoters.push_back(id);
     }
     std::map<int, double> counts = tallySheriff(firstVoters, remaining);
@@ -657,7 +679,7 @@ Game::ElectionOutcome Game::runSheriffElection() {
 
     // Runoff vote: everyone except the (remaining) PK candidates re-votes.
     std::vector<int> runoffVoters;
-    for (int id : alive) {
+    for (int id : participants) {
         if (!contains(leaders, id)) runoffVoters.push_back(id);
     }
     std::map<int, double> counts2 = tallySheriff(runoffVoters, leaders);

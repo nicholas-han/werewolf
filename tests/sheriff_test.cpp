@@ -218,3 +218,33 @@ TEST(Sheriff, DeferredFromPkCarriesOnlyPkCandidates) {
     ASSERT_TRUE(game.state().sheriffId.has_value());
     EXPECT_EQ(*game.state().sheriffId, 3);  // PK candidate won via the carried list
 }
+
+// ---------- Night-dead take part in the election (BRD §7.2/§7.4/§11) ----------
+
+TEST(Sheriff, NightDeadRunsWinsThenBadgeFlowsOnReveal) {
+    // The day-1 election runs BEFORE 公布死讯, so a player killed last night still
+    // "appears alive" and may run/win (§7.2/§7.4); skipping them would also leak who
+    // died before the official reveal (§11). Here the night-1 victim (seat 5) is the
+    // ONLY one who stands -> auto-elected; THEN the dawn reveal announces the death
+    // and the badge transfers to a living player (§7.6). Under the old bug seat 5 was
+    // excluded from the roster entirely, so nobody could have been elected.
+    ScriptedDecisionProvider dp;
+    dp.nightKills = {5, 3, 4};                              // n1 kills the would-be sheriff
+    dp.runForSheriff = {false, false, false, false, true};  // only night-dead seat 5 stands
+    dp.badgeTransfers = {4};                                // dead P5 hands the badge to P4
+
+    Game game(mkBoard("night-dead", {{RoleKind::Werewolf, 1}, {RoleKind::Civilian, 4}}), dp);
+    EXPECT_EQ(game.run(), GameResult::WolfWins);
+
+    // Night-dead seat 5 was actually elected — impossible if the election skipped it.
+    EXPECT_TRUE(hasEvent(dp, txt::becomesSheriff("P5")));
+    // …and the election finished BEFORE the death was announced (§7.2 / §11 no-leak).
+    auto elected = std::find(dp.events.begin(), dp.events.end(), txt::becomesSheriff("P5"));
+    auto reveal = std::find(dp.events.begin(), dp.events.end(), txt::outNoCause("P5"));
+    ASSERT_NE(elected, dp.events.end());
+    ASSERT_NE(reveal, dp.events.end());
+    EXPECT_LT(elected - dp.events.begin(), reveal - dp.events.begin());
+    // On the reveal the dead holder's badge transfers to a living player (§7.6).
+    EXPECT_TRUE(hasEvent(dp, txt::badgeTransferred("P4")));
+    EXPECT_FALSE(game.state().find(5)->isAlive());
+}
