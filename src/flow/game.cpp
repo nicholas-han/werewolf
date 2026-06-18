@@ -442,13 +442,19 @@ Game::ElectionOutcome Game::resolveElectionSelfDestruct(int sd, const std::vecto
         deferredPkCandidates_ = pkLeft;
     }
 
-    GameResult r = announceThenSelfDestruct(sd);
-    if (r != GameResult::Ongoing) return {r, false};
-
+    // §7.4「先定出警长，再进黑夜」: elect the lone PK survivor BEFORE announcing deaths.
+    // Order matters when the survivor is a not-yet-announced night death: electing first
+    // means the subsequent 公布死讯 reveals them AS sheriff, so maybeTransferBadge hands
+    // the badge to a living player (§7.6). Announcing first would mark them Out while
+    // still un-elected, then strand the badge on the corpse with no transfer.
     if (electSurvivor) {
         provider_.notify(txt::autoSheriff(nameOrId(state_, pkLeft.front())));
         electSheriff(pkLeft.front());
     }
+
+    GameResult r = announceThenSelfDestruct(sd);
+    if (r != GameResult::Ongoing) return {r, false};
+
     return {GameResult::Ongoing, true};  // self-destruct ends the day -> night
 }
 

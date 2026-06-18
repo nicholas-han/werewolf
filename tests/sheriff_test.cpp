@@ -277,3 +277,36 @@ TEST(Sheriff, DeferredDay2NightDeadStillParticipates) {
     EXPECT_TRUE(hasEvent(dp, txt::badgeTransferred("P4")));
     EXPECT_FALSE(game.state().find(5)->isAlive());
 }
+
+TEST(Sheriff, PkSurvivorIsNightDeadBadgeTransfersOnReveal) {
+    // §7.4 PK 塌缩 + §7.6: a night-dead player (seat 6) "appears alive", runs, and ties
+    // into the runoff; the OTHER finalist (wolf seat 2) self-destructs, so seat 6 auto-
+    // wins. The win must be decided BEFORE 公布死讯 so that when seat 6 is then revealed
+    // dead, its badge transfers to a LIVING player (here P4). Regression for the order
+    // bug where announceThenSelfDestruct revealed seat 6 first, leaving the badge stranded
+    // on a corpse with no transfer.
+    ScriptedDecisionProvider dp;
+    dp.runForSheriff = {false, true, false, false, false, true};  // seats 2 (wolf) & 6 (night-dead) stand
+    dp.sheriffVotes = {2, 2, 6, 6};            // voters {1,3,4,5}: 2-2 tie -> runoff {2,6}
+    dp.selfDestructs = {std::nullopt, 2};      // no SD in the after-speech window; wolf seat2 SD in the PK
+    dp.withdraws = {false, false};             // after-speech withdraw window for candidates {2,6}
+    dp.nightKills = {6, 3, 5};                 // n1 kills the would-be PK winner; n2,n3 -> WolfWins
+    dp.badgeTransfers = {4};                   // revealed-dead sheriff P6 hands the badge to living P4
+
+    Game game(mkBoard("pk-night-dead", {{RoleKind::Werewolf, 2}, {RoleKind::Civilian, 4}}), dp);
+    EXPECT_EQ(game.run(), GameResult::WolfWins);
+
+    // Seat 6 (night-dead) auto-won the PK when wolf seat 2 blew up (§7.4 先定出警长).
+    EXPECT_TRUE(hasEvent(dp, txt::becomesSheriff("P6")));
+    auto elected = std::find(dp.events.begin(), dp.events.end(), txt::becomesSheriff("P6"));
+    auto reveal = std::find(dp.events.begin(), dp.events.end(), txt::outNoCause("P6"));
+    ASSERT_NE(elected, dp.events.end());
+    ASSERT_NE(reveal, dp.events.end());
+    EXPECT_LT(elected - dp.events.begin(), reveal - dp.events.begin());  // elect BEFORE reveal
+    // KEY: the badge moved off the revealed-dead winner to a LIVING player (§7.6) —
+    // under the order bug no transfer happened and the badge stayed on the corpse.
+    EXPECT_TRUE(hasEvent(dp, txt::badgeTransferred("P4")));
+    ASSERT_TRUE(game.state().sheriffId.has_value());
+    EXPECT_EQ(*game.state().sheriffId, 4);
+    EXPECT_TRUE(game.state().find(4)->isAlive());
+}
