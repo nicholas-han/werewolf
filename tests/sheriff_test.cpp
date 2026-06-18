@@ -248,3 +248,32 @@ TEST(Sheriff, NightDeadRunsWinsThenBadgeFlowsOnReveal) {
     EXPECT_TRUE(hasEvent(dp, txt::badgeTransferred("P4")));
     EXPECT_FALSE(game.state().find(5)->isAlive());
 }
+
+TEST(Sheriff, DeferredDay2NightDeadStillParticipates) {
+    // §7.2/§7.5: the day-2 DEFERRED election (after a day-1 self-destruct) ALSO runs
+    // before 公布死讯 — so a player killed on NIGHT 2 still "appears alive" and takes
+    // part. Day 1: wolf seat 1 self-destructs -> defer (情形A, no PK). Night 2 kills
+    // civ seat 5. Day 2: seat 5 (night-dead) re-registers, is the sole candidate ->
+    // auto-elected; THEN the death is announced and the badge transfers (§7.6). This
+    // proves the fix is consistent across BOTH days, not just day 1.
+    ScriptedDecisionProvider dp;
+    dp.runForSheriff = {/*day1 seats 1-5*/ false, false, true, false, false,
+                        /*day2 participants 2,3,4,5*/ false, false, false, true};  // only night-dead seat5
+    dp.selfDestructs = {1};                        // day-1: wolf seat1 self-destructs -> defer
+    dp.nightKills = {std::nullopt, 5, 3};          // n1 空刀; n2 kills seat5; n3 kills seat3 -> WolfWins
+    dp.badgeTransfers = {4};                        // dead P5 hands the badge to P4
+
+    Game game(mkBoard("defer-night-dead", {{RoleKind::Werewolf, 2}, {RoleKind::Civilian, 3}}), dp);
+    EXPECT_EQ(game.run(), GameResult::WolfWins);
+
+    // Night-2-dead seat 5 took part in the DEFERRED election and won — impossible if skipped.
+    EXPECT_TRUE(hasEvent(dp, txt::becomesSheriff("P5")));
+    // The deferred election also finished BEFORE the night-2 death was announced.
+    auto elected = std::find(dp.events.begin(), dp.events.end(), txt::becomesSheriff("P5"));
+    auto reveal = std::find(dp.events.begin(), dp.events.end(), txt::outNoCause("P5"));
+    ASSERT_NE(elected, dp.events.end());
+    ASSERT_NE(reveal, dp.events.end());
+    EXPECT_LT(elected - dp.events.begin(), reveal - dp.events.begin());
+    EXPECT_TRUE(hasEvent(dp, txt::badgeTransferred("P4")));
+    EXPECT_FALSE(game.state().find(5)->isAlive());
+}
