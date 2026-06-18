@@ -104,9 +104,10 @@ std::vector<int> Game::electionParticipantIds() const {
     // §7.2/§11: alive ∪ not-yet-announced night dead, in seat order. The day-1 (and
     // day-2 deferred) election runs before 公布死讯, so the night-dead still "appear
     // alive" and take part — skipping them would leak who died before the reveal.
+    // `appearsAlive` is the single source of truth for the predicate (also used by §7.5).
     std::vector<int> ids;
     for (const Player& p : state_.players) {
-        if (p.isAlive() || contains(pendingNightDeaths_, p.id())) ids.push_back(p.id());
+        if (appearsAlive(p.id())) ids.push_back(p.id());
     }
     return ids;
 }
@@ -390,7 +391,8 @@ void Game::electSheriff(int playerId) {
 std::vector<int> Game::selfDestructWolfCandidates() const {
     std::vector<int> ids = aliveWolfIds();
     // §2 自爆吞毒: a wolf that died at night but whose death isn't announced yet
-    // (only during the day-1 pre-announcement election window) can still自爆.
+    // (during the pre-announcement election window — day-1, or the day-2 deferred
+    // vote §7.5, both of which run before 公布死讯) can still自爆.
     for (int id : pendingNightDeaths_) {
         const Player* p = state_.find(id);
         if (p && p->faction() == Faction::Wolf) ids.push_back(id);
