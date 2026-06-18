@@ -69,8 +69,12 @@ PROVIDER_PRESETS: dict[str, ProviderPreset] = {
         "OpenAI", "https://api.openai.com/v1", "OPENAI_API_KEY", "gpt-4o-mini",
         models=("gpt-4o-mini", "gpt-4o")),
     "deepseek": ProviderPreset(
-        "DeepSeek", "https://api.deepseek.com/v1", "DEEPSEEK_API_KEY", "deepseek-chat",
-        models=("deepseek-chat", "deepseek-reasoner")),
+        # V4 模型名（官方现行）：deepseek-v4-flash 均衡快、deepseek-v4-pro 最强。
+        # 旧名 deepseek-chat / deepseek-reasoner 仍可用但 **2026-07-24 起停用**
+        # （分别对应 v4-flash 的非思考/思考模式），故默认与菜单用 V4 名。
+        # base_url 用 /v1（官方 https://api.deepseek.com 与 /v1 皆可）。
+        "DeepSeek", "https://api.deepseek.com/v1", "DEEPSEEK_API_KEY", "deepseek-v4-flash",
+        models=("deepseek-v4-flash", "deepseek-v4-pro")),
     "moonshot": ProviderPreset(
         "Moonshot / Kimi", "https://api.moonshot.cn/v1", "MOONSHOT_API_KEY", "moonshot-v1-8k",
         models=("moonshot-v1-8k", "moonshot-v1-32k", "kimi-k2-0711-preview")),

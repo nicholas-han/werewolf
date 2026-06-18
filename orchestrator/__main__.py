@@ -1,20 +1,22 @@
 """CLI: run one game.
 
-交互式启动（在真实终端里）会依次让你选 **板子 → 模型 → 你的座位**；任何一项都可用
-对应 flag 预先指定来跳过：
+**默认用云端 DeepSeek**（API key，M16）——本地推理模型太慢时的提速路径：
 
-    python -m orchestrator                       # 全程下拉选择（本地 Ollama）
-    python -m orchestrator --board 1 --human-seat 1 --model deepseek-r1:1.5b
-    python -m orchestrator --fake                # 确定性假模型，秒级（管线/调试）
+    export DEEPSEEK_API_KEY=sk-xxxx              # 先把 key 放进环境变量（绝不写进代码/配置）
+    python -m orchestrator --human-seat 1                       # 默认 deepseek-v4-flash，你坐 1 号
+    python -m orchestrator --model deepseek-v4-pro             # 更强的模型
+    python -m orchestrator --fake                              # 确定性假模型，秒级（无需 key）
 
-云端大模型（API key，M16）——本地推理模型太慢时用它，**优先阿里百炼**：
+换其它厂商只改 --provider（key 各走自己的环境变量）：
 
-    export DASHSCOPE_API_KEY=sk-xxxx             # 先把 key 放进环境变量（绝不写进代码/配置）
-    python -m orchestrator --provider bailian --human-seat 1            # 默认 qwen-plus
-    python -m orchestrator --provider bailian --model qwen-max          # 指定模型
-    python -m orchestrator --provider deepseek --model deepseek-chat    # 其它兼容厂商同理
+    export DASHSCOPE_API_KEY=sk-xxxx
+    python -m orchestrator --provider bailian --model qwen-max            # 阿里百炼
     python -m orchestrator --provider openai-compat \\
         --base-url https://your-endpoint/v1 --api-key-env MY_KEY --model foo   # 任意兼容端点
+
+本地 Ollama（须先 ollama serve）：
+
+    python -m orchestrator --provider ollama --human-seat 1    # 启动时下拉选本地模型
 """
 
 from __future__ import annotations
@@ -141,9 +143,10 @@ def main() -> None:
     ap.add_argument("--board", type=int, default=None, choices=[1, 2, 3], help="省略=启动时选择")
     ap.add_argument("--seed", type=int, default=12345)
     ap.add_argument("--human-seat", type=int, default=None, help="座位号；省略=启动时选择")
-    ap.add_argument("--provider", default="ollama",
+    ap.add_argument("--provider", default="deepseek",
                     choices=list(_LOCAL_PROVIDERS) + provider_choices(),
-                    help="ollama=本地；fake=假模型；其余为云端(API key)，优先 bailian(阿里百炼)")
+                    help="默认 deepseek(云端,需 DEEPSEEK_API_KEY)；ollama=本地；fake=假模型；"
+                         "其余云端见 bailian/openai/moonshot/zhipu/anthropic/openai-compat")
     ap.add_argument("--model", default=None,
                     help="模型名；省略 → Ollama 启动下拉 / 云端用该厂商默认模型")
     ap.add_argument("--ollama-host", default="http://localhost:11434")

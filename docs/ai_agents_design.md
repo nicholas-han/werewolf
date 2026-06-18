@@ -38,7 +38,7 @@
 - 真·联机（多设备/WebSocket/浏览器客户端）。
 - 拍刀阶段 C「开卷最优」自动搜索（§4.4）。
 - 多真人混局（引擎已支持多座位，但本期只 1 真人）。
-- ~~远程模型先不接（抽象层留好，配置即可启用）。~~ → **M16 已接通**：`orchestrator/cloud.py` 通过 API key 接云端大模型，**优先阿里百炼（DashScope）**，并通用覆盖 OpenAI/DeepSeek/Moonshot/智谱/Anthropic 等（见 §7.2）。
+- ~~远程模型先不接（抽象层留好，配置即可启用）。~~ → **M16 已接通**：`orchestrator/cloud.py` 通过 API key 接云端大模型，通用覆盖 DeepSeek（**当前默认**）/ 阿里百炼（DashScope）/ OpenAI / Moonshot / 智谱 / Anthropic 等（见 §7.2）。
 
 ---
 
@@ -526,7 +526,7 @@ parse_and_validate(out, ask):
 3. ✅ **引擎：狼队私聊（§5.4）+ 候选人发言（§5.6）+ 发言广播 `speech` 事件**。
 4. ✅ **Python orchestrator**：EngineProcess + AgentBrain + Recorder + Orchestrator 主循环；`FakeLlmClient` 端到端（整局完成 + 两份记录 + §11 公平性断言）。
 5. ✅ **LlmClient + OllamaClient(R1 适配) + AgentBrain**（§7）：接本地 deepseek-r1:14b——per-decision 已验证（真实选择 + 干净第一人称发言 + reasoning 入 trace、不外泄）。整局慢，挑时间跑；管线/调试用 `--fake`。
-6. ✅ **云端大模型（M16）**：`orchestrator/cloud.py` 通过 API key 接云端，优先阿里百炼，通用覆盖 OpenAI 兼容厂商 + Anthropic（§7.2）。本地推理太慢时的提速路径。
+6. ✅ **云端大模型（M16）**：`orchestrator/cloud.py` 通过 API key 接云端，默认 DeepSeek，通用覆盖 OpenAI 兼容厂商（含阿里百炼）+ Anthropic（§7.2）。本地推理太慢时的提速路径。
 7. ⏳ **打磨**：已做——局势摘要 / 角色提示 / 调温 / scratchpad（回灌历史 reasoning）/ 发言抽取统一；**留后续**——persona 多样化、view 滚动摘要、远程多模型并发、few-shot。
 
 **额外落地（试玩反馈，已在分支实现，见提交历史与 §5.4/§5.6/§5.7/§6/§7）**：狼队**多轮私聊**（默认 2，自然收尾）→**秘密投票定刀**（平票/无人＝空刀）；**逐发言自爆/退水中断**（`--interrupts`，默认关）；上警名单 / 警长**先公开归票** / 放逐&警长投票均**盲做后公开每人所投**；**夜死不报死因**（§11）；**每局独立保留 script**（带时间戳目录）。

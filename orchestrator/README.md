@@ -13,33 +13,44 @@ backend, and the records. Design: [../docs/ai_agents_design.md](../docs/ai_agent
 cmake -B build && cmake --build build      # 产出 build/werewolf
 ```
 
-默认用本地 **Ollama**（须先 `ollama serve`）。**不带 `--model` 时，启动会列出已装模型让你下拉选择**：
+**默认用云端 DeepSeek**（需 `DEEPSEEK_API_KEY`，见下「云端大模型」）：
 
 ```bash
-python3 -m orchestrator --human-seat 1            # 启动时下拉选模型，你坐 1 号
-python3 -m orchestrator --model deepseek-r1:1.5b  # 指定模型、跳过下拉（1.5b 最快）
-python3 -m orchestrator --fake                    # 确定性假模型，秒级（管线/调试）
+export DEEPSEEK_API_KEY=sk-xxxx                    # 先设好 key（绝不写进代码/配置）
+python3 -m orchestrator --human-seat 1            # 默认 provider=deepseek、model=deepseek-v4-flash
+python3 -m orchestrator --model deepseek-v4-pro   # 更强的模型
+python3 -m orchestrator --fake                    # 确定性假模型，秒级（管线/调试，无需 key）
 ```
 
-> 真模型整局**较慢**（14b 约 17–35s/决策；1.5b 快很多但策略弱）；快速验证用 `--fake`。
-
-### 云端大模型（API key，M16）——本地太慢时用它，**优先阿里百炼**
-
-API key **只走环境变量**（绝不写进代码/配置/提交）。先 `export`，再 `--provider`：
+本地 **Ollama**（须先 `ollama serve`）仍可用，加 `--provider ollama`；不带 `--model` 会列出已装模型下拉选择：
 
 ```bash
-export DASHSCOPE_API_KEY=sk-xxxx                      # 阿里百炼（DashScope，OpenAI 兼容）
-python3 -m orchestrator --provider bailian --human-seat 1            # 默认 qwen-plus
-python3 -m orchestrator --provider bailian --model qwen-max          # 指定模型（更强）
+python3 -m orchestrator --provider ollama --human-seat 1   # 启动时下拉选本地模型
+python3 -m orchestrator --provider ollama --model deepseek-r1:1.5b
+```
+
+> 本地真模型整局**较慢**（14b 约 17–35s/决策）；云端快很多；快速验证用 `--fake`。
+
+### 云端大模型（API key，M16）
+
+API key **只走环境变量**（绝不写进代码/配置/提交）。先 `export`，再（默认即 deepseek，其它家用 `--provider`）：
+
+```bash
+export DEEPSEEK_API_KEY=sk-xxxx                                      # DeepSeek（默认）
+python3 -m orchestrator --human-seat 1                              # 默认 deepseek-v4-flash
+python3 -m orchestrator --model deepseek-v4-pro                     # 更强
+
+export DASHSCOPE_API_KEY=sk-xxxx                                    # 阿里百炼（DashScope）
+python3 -m orchestrator --provider bailian --model qwen-max        # 换厂商只改 --provider
 ```
 
 同一套机制通用覆盖其它「OpenAI 兼容」云厂商，每家只是一个**预设**（base_url + 取 key 的环境变量名 + 默认模型）：
 
 | `--provider` | 厂商 | 环境变量 | 默认模型 |
 | --- | --- | --- | --- |
-| `bailian` / `dashscope` | 阿里百炼（**优先**） | `DASHSCOPE_API_KEY` | `qwen-plus` |
+| `deepseek` | DeepSeek（**默认**） | `DEEPSEEK_API_KEY` | `deepseek-v4-flash` |
+| `bailian` / `dashscope` | 阿里百炼（DashScope） | `DASHSCOPE_API_KEY` | `qwen-plus` |
 | `openai` | OpenAI | `OPENAI_API_KEY` | `gpt-4o-mini` |
-| `deepseek` | DeepSeek | `DEEPSEEK_API_KEY` | `deepseek-chat` |
 | `moonshot` | Moonshot / Kimi | `MOONSHOT_API_KEY` | `moonshot-v1-8k` |
 | `zhipu` | 智谱 GLM | `ZHIPU_API_KEY` | `glm-4-flash` |
 | `anthropic` | Anthropic Claude | `ANTHROPIC_API_KEY` | `claude-haiku-4-5-20251001` |
@@ -54,7 +65,7 @@ python3 -m orchestrator --provider openai-compat \
 
 要点：
 - 默认每次模型调用软超时 **云端 60s / 本地 600s**（`--timeout` 覆盖）；429/5xx/网络错带退避重试，最终失败回退合法默认，**绝不卡死游戏**。
-- 推理模型（`deepseek-r1`/`deepseek-reasoner`…）的思维链在独立字段 `reasoning_content` 返回，已被包回 `<think>` 供 `AgentBrain` 切分——**绝不会漏进公开发言**（§11）。
+- 推理模型（DeepSeek thinking 模式 / 百炼 `deepseek-r1`…）的思维链在独立字段 `reasoning_content` 返回，已被包回 `<think>` 供 `AgentBrain` 切分——**绝不会漏进公开发言**（§11）。
 - 暂不支持**仅流式**的模型（百炼 QwQ 系 `qwq-*`）与 OpenAI **o 系**（`o4-mini` 等需 `max_completion_tokens`/不收 `temperature`）——本客户端发非流式、统一 `temperature`+`max_tokens`，这两类会被拒（HTTP 400 → 回退合法默认）；故未在下拉菜单列出，待后续按模型族适配 / 实现 SSE 流式后再开。
 - 结构化输出默认靠提示词约定 + 宽松解析 + 合法回退；弱模型可加 `--json-object`（仅对 choose/confirm 下发 `response_format=json_object`，speak 不强制）。
 - 海外节点：`--base-url https://dashscope-intl.aliyuncs.com/compatible-mode/v1`（新加坡）等。

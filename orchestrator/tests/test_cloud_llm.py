@@ -62,6 +62,13 @@ class PresetRegistryTest(unittest.TestCase):
     def test_anthropic_preset_is_anthropic_kind(self):
         self.assertEqual(cloud.PROVIDER_PRESETS["anthropic"].kind, "anthropic")
 
+    def test_deepseek_preset_uses_current_v4_names(self):
+        p = cloud.PROVIDER_PRESETS["deepseek"]
+        self.assertEqual(p.base_url, "https://api.deepseek.com/v1")
+        self.assertEqual(p.api_key_env, "DEEPSEEK_API_KEY")
+        self.assertEqual(p.default_model, "deepseek-v4-flash")  # not the retiring deepseek-chat
+        self.assertNotIn("deepseek-chat", p.models)
+
 
 class FactoryTest(unittest.TestCase):
     def test_bailian_builds_openai_compat_with_preset_defaults(self):
