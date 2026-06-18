@@ -1,8 +1,14 @@
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <condition_variable>
+#include <istream>
+#include <mutex>
 #include <optional>
 #include <sstream>
+#include <streambuf>
 #include <string>
+#include <thread>
 
 #include "core/board.h"
 #include "core/game_state.h"
@@ -16,6 +22,58 @@ using namespace ww;
 namespace {
 
 GameState board9State() { return buildInitialState(makeBoard9_SeerWitchHunter()); }
+
+// A streambuf whose reads block until a line is pushed (optionally after a delay)
+// or it is closed — letting a test stand in for an orchestrator that replies late
+// or never, exercising the §8 soft ask-timeout. Thread-safe; owns its delay timer
+// and joins it on destruction so nothing outlives the buffer.
+class PipeStreamBuf : public std::streambuf {
+public:
+    ~PipeStreamBuf() override {
+        close();
+        if (timer_.joinable()) timer_.join();
+    }
+    // Make `s` readable after `delay` (simulating a slow orchestrator reply).
+    void deliverAfter(std::string s, std::chrono::milliseconds delay) {
+        timer_ = std::thread([this, s = std::move(s), delay]() mutable {
+            std::this_thread::sleep_for(delay);
+            push(std::move(s));
+        });
+    }
+    void push(std::string s) {
+        {
+            std::lock_guard<std::mutex> lk(m_);
+            pending_ += std::move(s);
+        }
+        cv_.notify_all();
+    }
+    void close() {
+        {
+            std::lock_guard<std::mutex> lk(m_);
+            closed_ = true;
+        }
+        cv_.notify_all();
+    }
+
+protected:
+    int underflow() override {
+        std::unique_lock<std::mutex> lk(m_);
+        cv_.wait(lk, [&] { return !pending_.empty() || closed_; });
+        if (pending_.empty()) return traits_type::eof();  // closed & drained
+        cur_ = std::move(pending_);
+        pending_.clear();
+        setg(&cur_[0], &cur_[0], &cur_[0] + cur_.size());
+        return traits_type::to_int_type(static_cast<unsigned char>(cur_[0]));
+    }
+
+private:
+    std::mutex m_;
+    std::condition_variable cv_;
+    std::string pending_;
+    std::string cur_;
+    bool closed_ = false;
+    std::thread timer_;
+};
 
 // Count how many top-level lines in `s` parse as JSON; fail on any that don't.
 int allLinesParse(const std::string& s) {
@@ -113,6 +171,79 @@ TEST(JsonProtocol, EofVoteFallsBackToFirstNonSelf) {
     GameState s = board9State();
     JsonDecisionProvider p(in, out, "B", 1);
     EXPECT_EQ(p.chooseVote(s, 1, {1, 2, 3}), std::optional<int>(2));
+}
+
+// --- §8 soft ask-timeout: a hung/silent orchestrator must not hang the engine ---
+
+TEST(JsonProtocol, AskTimeoutFallsBackWhenNoReplyArrives) {
+    PipeStreamBuf sb;  // open, but no reply ever pushed -> getline would block forever
+    std::istream in(&sb);
+    std::ostringstream out;
+    GameState s = board9State();
+    JsonDecisionProvider p(in, out, "B", 1);
+    p.setAskTimeout(std::chrono::milliseconds(100));
+
+    const auto t0 = std::chrono::steady_clock::now();
+    const std::optional<int> choice = p.chooseVote(s, 1, {1, 2, 3});
+    const auto elapsed = std::chrono::steady_clock::now() - t0;
+
+    EXPECT_EQ(choice, std::optional<int>(2));  // §8 vote-like fallback: first non-self
+    EXPECT_LT(elapsed, std::chrono::seconds(5));            // returned — did NOT block forever
+    EXPECT_GE(elapsed, std::chrono::milliseconds(50));      // and actually waited ~the timeout
+    // The fallback is recorded as a moderator-only note (never leaks to a brain).
+    const std::string o = out.str();
+    EXPECT_NE(o.find("\"timeout\":true"), std::string::npos);
+    EXPECT_NE(o.find("\"vis\":\"moderator\""), std::string::npos);
+    EXPECT_EQ(o.find("\"vis\":\"public\""), std::string::npos);
+
+    sb.close();  // let the background reader reach EOF so the provider dtor joins cleanly
+}
+
+TEST(JsonProtocol, AskTimeoutIgnoresReplyThatArrivesTooLate) {
+    PipeStreamBuf sb;
+    std::istream in(&sb);
+    std::ostringstream out;
+    GameState s = board9State();
+    JsonDecisionProvider p(in, out, "B", 1);
+    p.setAskTimeout(std::chrono::milliseconds(100));
+    // A *valid* choice of seat 3, but delivered long after the deadline.
+    sb.deliverAfter("{\"t\":\"reply\",\"choice\":3}\n", std::chrono::milliseconds(500));
+
+    // Engine must fall back at the deadline rather than wait for the late reply,
+    // so it returns the first-non-self default (2), not the tardy choice (3).
+    EXPECT_EQ(p.chooseVote(s, 1, {1, 2, 3}), std::optional<int>(2));
+
+    sb.close();
+}
+
+// With the timeout disabled (<=0), a real reply is still honored (no regression).
+TEST(JsonProtocol, AskTimeoutDisabledStillReadsReply) {
+    std::istringstream in("{\"t\":\"reply\",\"choice\":3}\n");
+    std::ostringstream out;
+    GameState s = board9State();
+    JsonDecisionProvider p(in, out, "B", 1);
+    p.setAskTimeout(std::chrono::milliseconds(0));  // wait indefinitely
+    EXPECT_EQ(p.chooseVote(s, 1, {1, 2, 3}), std::optional<int>(3));
+}
+
+// Production-critical: an orchestrator may hang while holding the pipe open, so a
+// game completes via timeouts but the engine's background reader is still blocked
+// in getline at teardown. The provider destructor must NOT hang joining it — it
+// detaches after a bounded grace so the engine can exit. The heap stream is leaked
+// on purpose: the detached reader (blocked forever here) must never touch freed
+// memory, and std::cin — the real production stream — outlives the process anyway.
+TEST(JsonProtocol, ProviderDestructorDoesNotHangOnBlockedReader) {
+    auto* sb = new PipeStreamBuf();         // never closed, never freed (intentional)
+    auto* in = new std::istream(sb);
+    std::ostringstream out;
+    const auto t0 = std::chrono::steady_clock::now();
+    {
+        JsonDecisionProvider p(*in, out, "B", 1);
+        p.setAskTimeout(std::chrono::milliseconds(50));
+        EXPECT_EQ(p.chooseVote(board9State(), 1, {1, 2, 3}), std::optional<int>(2));
+    }  // dtor runs with the reader still blocked -> must detach, not join-hang
+    const auto elapsed = std::chrono::steady_clock::now() - t0;
+    EXPECT_LT(elapsed, std::chrono::seconds(5));  // returned promptly -> engine can exit
 }
 
 TEST(JsonProtocol, ConfirmTrue) {
