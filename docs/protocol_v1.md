@@ -145,7 +145,7 @@ choose/confirm 的 `kind`（来自 `src/io/player_channel.h`）：
 | `MechanicBigKnife` | choose | 机械狼（已成独狼、学过狼） | 存活玩家；`null`=留待后用 |
 | `Vote` | choose | 放逐投票（首轮非警长） | 存活玩家；`null`=弃票 |
 | `RunoffVote` | choose | 放逐决胜轮 | 并列候选；`null`=弃票 |
-| `RunForSheriff` | confirm | 每个存活玩家 | 是否上警 |
+| `RunForSheriff` | confirm | 每个明面存活玩家（含未公布的夜死者，BRD §7.2） | 是否上警 |
 | `Withdraw` | confirm | 每个候选人 | 是否退水 |
 | `SheriffVote` | choose | 竞选投票（未上警者） | 候选人；`null`=弃票 |
 | `ConsolidateSingle` | confirm | 警长（放逐归票） | 归单人(1.5)？否=归多人PK(1.0) |
