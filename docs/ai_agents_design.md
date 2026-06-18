@@ -38,7 +38,7 @@
 - 真·联机（多设备/WebSocket/浏览器客户端）。
 - 拍刀阶段 C「开卷最优」自动搜索（§4.4）。
 - 多真人混局（引擎已支持多座位，但本期只 1 真人）。
-- 远程模型先不接（抽象层留好，配置即可启用）。
+- ~~远程模型先不接（抽象层留好，配置即可启用）。~~ → **M16 已接通**：`orchestrator/cloud.py` 通过 API key 接云端大模型，通用覆盖 DeepSeek（**当前默认**）/ 阿里百炼（DashScope）/ OpenAI / Moonshot / 智谱 / Anthropic 等（见 §7.2）。
 
 ---
 
@@ -358,9 +358,11 @@ class LlmClient(Protocol):
 
 后端（实现同一 `LlmClient`）：
 - `OllamaClient(model, host="http://localhost:11434")` — **本期默认**。choose/confirm 把 `AgentBrain` 的 JSON schema 作为 Ollama **`format`** 下发——**只约束 `content` 为合法 JSON（choice 的 `enum` 还保证合法候选），思考仍在独立 `thinking` 字段、不被抑制** → 决策几乎不再回退。**speak 同样下发 `format`={"speech": string}**——否则弱/分心的模型会把发言写成 choose 式 JSON（如 `{"choice": null}`）；强制后必产出真发言字符串，`AgentBrain` 抽出 `speech`。对 R1 做适配（§7.5）。
-- `OpenAICompatClient(base_url, api_key_env, model)` — 覆盖 OpenAI 及大量兼容服务；结构化用 `response_format=json_schema` / function calling。
-- `AnthropicClient(api_key_env, model)` — Anthropic Messages API；结构化用 tool use。
-- 后续：其它家照此添加。
+- `OpenAICompatClient(base_url, model, api_key_env, …)` — **M16 已实现**（`orchestrator/cloud.py`）。覆盖 OpenAI 及大量兼容服务（**阿里百炼/DashScope**、DeepSeek、Moonshot/Kimi、智谱…）——都说 `POST {base_url}/chat/completions` + `Authorization: Bearer <key>`。`system` 走真正的 system role（云端模型支持，不必像 R1 折进 user）；推理模型的思维链在独立字段 `reasoning_content` 返回，包回 `<think>` 供切分（绝不广播，§11）。结构化输出默认靠提示词约定 + 宽松解析 + 合法回退（Qwen 等稳定遵守）；`json_object=True` 时对 choose/confirm 下发 `response_format={"type":"json_object"}` 加强（speak 不强制）。
+- `AnthropicClient(model, api_key_env, …)` — **M16 已实现**。Anthropic Messages API（`system` 顶层参数、`x-api-key` + `anthropic-version` 头）；证明 `LlmClient` 这层缝对非 OpenAI 形态同样通用。
+- **预设表 `PROVIDER_PRESETS`**（`cloud.py`）：每个云厂商 = `base_url + api_key_env + 默认模型 + 备选模型`，`"bailian"`（含别名 `"dashscope"`）为优先预设。`build_client(provider, …)` 工厂按名构造；`"openai-compat"` 为任意兼容端点的逃生口（须显式 `--base-url/--api-key-env`）。换后端只改 `--provider`。
+- 健壮性：429/5xx/网络错带退避重试；最终失败 / key 缺失 → 返回空 `Completion`，AgentBrain 落到合法默认，**绝不卡死游戏**。每次调用软超时云端默认 60s（本地 600s）。
+- 后续：其它非兼容家照 `AnthropicClient` 模式再加一个子类即可。
 
 工厂按配置里的 `provider` 字段构造。配置示例（orchestrator 读，**不进引擎**）：
 
@@ -524,7 +526,8 @@ parse_and_validate(out, ask):
 3. ✅ **引擎：狼队私聊（§5.4）+ 候选人发言（§5.6）+ 发言广播 `speech` 事件**。
 4. ✅ **Python orchestrator**：EngineProcess + AgentBrain + Recorder + Orchestrator 主循环；`FakeLlmClient` 端到端（整局完成 + 两份记录 + §11 公平性断言）。
 5. ✅ **LlmClient + OllamaClient(R1 适配) + AgentBrain**（§7）：接本地 deepseek-r1:14b——per-decision 已验证（真实选择 + 干净第一人称发言 + reasoning 入 trace、不外泄）。整局慢，挑时间跑；管线/调试用 `--fake`。
-6. ⏳ **打磨**：已做——局势摘要 / 角色提示 / 调温 / scratchpad（回灌历史 reasoning）/ 发言抽取统一；**留后续**——persona 多样化、view 滚动摘要、远程多模型、few-shot。
+6. ✅ **云端大模型（M16）**：`orchestrator/cloud.py` 通过 API key 接云端，默认 DeepSeek，通用覆盖 OpenAI 兼容厂商（含阿里百炼）+ Anthropic（§7.2）。本地推理太慢时的提速路径。
+7. ⏳ **打磨**：已做——局势摘要 / 角色提示 / 调温 / scratchpad（回灌历史 reasoning）/ 发言抽取统一；**留后续**——persona 多样化、view 滚动摘要、远程多模型并发、few-shot。
 
 **额外落地（试玩反馈，已在分支实现，见提交历史与 §5.4/§5.6/§5.7/§6/§7）**：狼队**多轮私聊**（默认 2，自然收尾）→**秘密投票定刀**（平票/无人＝空刀）；**逐发言自爆/退水中断**（`--interrupts`，默认关）；上警名单 / 警长**先公开归票** / 放逐&警长投票均**盲做后公开每人所投**；**夜死不报死因**（§11）；**每局独立保留 script**（带时间戳目录）。
 
@@ -534,7 +537,7 @@ parse_and_validate(out, ask):
 
 ## 11. 远期演进（设计已为其留路）
 
-- **远程多模型**：加 `OpenAICompatClient` / `AnthropicClient`，配置即用；API key 走 env。每席可不同模型，便于「模型对抗」与自对弈采数据。
+- **远程多模型**：✅ 后端已落地（M16，§7.2，`OpenAICompatClient` / `AnthropicClient` + 预设表）；API key 走 env。**留后续**——把「每席不同 provider/model」的逐座位配置接进 CLI/配置文件（当前一局统一一个 provider/model），便于「模型对抗」与自对弈采数据。
 - **并发**：远程后端下，相互独立的夜间决策可并发；需引擎支持「批量发 ask」或 orchestrator 侧推测式调度（当前同步模型先不做）。
 - **多模态语音**（你的明确方向）：
   - 输入：STT（如 Whisper）把真人语音转成 `speak` 的 `text`——**协议/引擎不变**，只是 HumanTerminal 多一个输入源。
