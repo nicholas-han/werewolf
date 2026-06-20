@@ -218,6 +218,23 @@ TEST(HunterGunCheck, MechanicWitchPoisonAlsoBlocksShot) {
     EXPECT_TRUE(dp.hunterGunChecks.back().second);
 }
 
+TEST(HunterGunCheck, NoneModeGuardDoesNotSaveFromPoison) {
+    // §3: in PoisonReflect::None the mechanic learned-guard blocks nothing, so a
+    // guarded-but-poisoned hunter still dies and cannot shoot — the gun-check must
+    // mirror the None dawn rule (the opposite of the reflect case above).
+    GameState s = psychicBoard();
+    HunterGunCheck gc(PoisonReflect::None);
+    ScriptedDecisionProvider dp;
+
+    NightContext guardedButNone;
+    guardedButNone.poisonTarget = 7;
+    guardedButNone.poisonSourceId = 6;
+    guardedButNone.mechanicGuardTarget = 7;  // guarded, but None -> no protection
+    gc.actAtNight(guardedButNone, s, *s.find(7), dp);
+    ASSERT_EQ(dp.hunterGunChecks.size(), 1u);
+    EXPECT_FALSE(dp.hunterGunChecks.back().second);  // dies poisoned -> cannot shoot
+}
+
 // ---------- M9 Phase 2: learned active abilities (BRD §2) ----------
 
 TEST(MechanicLearned, HunterShotGatedThenPoisonBlocked) {
@@ -348,14 +365,71 @@ TEST(Game, BigKnifeUnsaveableAndHiddenFromWitch) {
     EXPECT_TRUE(game.state().witchAntidoteAvailable);  // witch was never offered the big-knife target
 }
 
+TEST(Game, MechanicBigKnifeRespectsGuardWhenConfigured) {
+    // §2 config: bigKnifePiercesGuard=false -> a guarded target survives the 破盾大刀.
+    // wolf, mechanic, guardian, civ (KillAll, sheriff off). After learning the wolf and
+    // exiling it, the lone mechanic big-knifes the guarded civ4 (survives); the town
+    // then exiles the mechanic for the win, leaving civ4 alive to prove it survived.
+    Board board;
+    board.name = "bigknife-respects-guard";
+    board.roster = {{RoleKind::Werewolf, 1}, {RoleKind::MechanicWolf, 1},
+                    {RoleKind::Guardian, 1}, {RoleKind::Civilian, 1}};
+    board.config.winRule = WinRule::KillAll;
+    board.config.sheriffEnabled = false;
+    board.config.mechanic.bigKnifePiercesGuard = false;
+
+    ScriptedDecisionProvider dp;
+    dp.mechanicLearns = {1};                       // n1 learn the werewolf -> gains 大刀
+    dp.guards = {std::nullopt, 4};                 // n1 空守 ; n2 guardian guards civ4
+    dp.nightKills = {std::nullopt, std::nullopt};   // n1 团刀空 ; n2 lone 普通刀空
+    dp.mechanicBigKnives = {4};                    // n2 大刀 -> the guarded civ4
+    dp.votes = {1, 1, 1, 1, /*day2*/ 2, 2, 2};      // d1 exile wolf(1) ; d2 exile mechanic(2)
+
+    Game game(board, dp);
+    EXPECT_EQ(game.run(), GameResult::TownWins);
+    EXPECT_TRUE(game.state().find(4)->isAlive());                          // guard stopped the big knife
+    EXPECT_FALSE(game.state().find(4)->hasDeathCause(DeathCause::Killed));
+}
+
+TEST(Game, MechanicBigKnifeSaveableWhenConfigured) {
+    // §2 config: bigKnifePiercesAntidote=false -> the witch IS offered the 破盾大刀
+    // target and a save blocks it. wolf, mechanic, witch, civ (KillAll, sheriff off).
+    Board board;
+    board.name = "bigknife-saveable";
+    board.roster = {{RoleKind::Werewolf, 1}, {RoleKind::MechanicWolf, 1},
+                    {RoleKind::Witch, 1}, {RoleKind::Civilian, 1}};
+    board.config.winRule = WinRule::KillAll;
+    board.config.sheriffEnabled = false;
+    board.config.mechanic.bigKnifePiercesAntidote = false;
+
+    ScriptedDecisionProvider dp;
+    dp.mechanicLearns = {1};                       // n1 learn the werewolf -> gains 大刀
+    dp.nightKills = {std::nullopt, std::nullopt};   // n1 团刀空 ; n2 lone 普通刀空
+    dp.mechanicBigKnives = {4};                    // n2 大刀 -> civ4
+    dp.witchSaves = {true};                        // n2 witch saves the offered big-knife target
+    dp.votes = {1, 1, 1, 1, /*day2*/ 2, 2, 2};      // d1 exile wolf(1) ; d2 exile mechanic(2)
+
+    Game game(board, dp);
+    EXPECT_EQ(game.run(), GameResult::TownWins);
+    EXPECT_TRUE(game.state().find(4)->isAlive());                          // antidote stopped the big knife
+    EXPECT_FALSE(game.state().find(4)->hasDeathCause(DeathCause::Killed));
+    EXPECT_FALSE(game.state().witchAntidoteAvailable);                     // antidote was spent on the save
+}
+
+// The mechanic learned-guard vs. poison rule has three board-configurable modes
+// (§3, BoardConfig::mechanic.poisonReflect). The three tests below share a board —
+// werewolf, mechanic, witch, guardian, civilian (KillAll, sheriff off) — where on
+// n2 the mechanic (having learned the guardian on n1) protects civ5 and the witch
+// poisons civ5; only the mode changes who lives and dies.
+
 TEST(Game, MechanicGuardReflectsPoison) {
-    // KillAll, sheriff off: werewolf, mechanic, witch, guardian, civilian.
     Board board;
     board.name = "reflect";
     board.roster = {{RoleKind::Werewolf, 1}, {RoleKind::MechanicWolf, 1}, {RoleKind::Witch, 1},
                     {RoleKind::Guardian, 1}, {RoleKind::Civilian, 1}};
     board.config.winRule = WinRule::KillAll;
     board.config.sheriffEnabled = false;
+    board.config.mechanic.poisonReflect = PoisonReflect::ReflectToPoisoner;
 
     ScriptedDecisionProvider dp;
     dp.mechanicLearns = {4};  // n1 learn the guardian (gains reflecting protect)
@@ -368,4 +442,59 @@ TEST(Game, MechanicGuardReflectsPoison) {
     EXPECT_EQ(game.run(), GameResult::WolfWins);
     EXPECT_TRUE(game.state().find(3)->hasDeathCause(DeathCause::Poisoned));  // witch reflected dead
     EXPECT_TRUE(game.state().find(5)->isAlive());                            // protected civ survived
+}
+
+TEST(Game, MechanicGuardProtectOnlyPoison) {
+    // ProtectOnly: the protected civ5 lives, but the poison does NOT reflect — the
+    // witch is unharmed. With nobody dying on n2, the wolves knife civ5 then the
+    // guardian on n3/n4 to reach the vote-binding win (§4.3).
+    Board board;
+    board.name = "protect-only";
+    board.roster = {{RoleKind::Werewolf, 1}, {RoleKind::MechanicWolf, 1}, {RoleKind::Witch, 1},
+                    {RoleKind::Guardian, 1}, {RoleKind::Civilian, 1}};
+    board.config.winRule = WinRule::KillAll;
+    board.config.sheriffEnabled = false;
+    board.config.mechanic.poisonReflect = PoisonReflect::ProtectOnly;
+
+    ScriptedDecisionProvider dp;
+    dp.mechanicLearns = {4};  // n1 learn the guardian
+    // guards: n1 real ; n2 real, mech(5) ; n3 real, mech ; n4 real, mech.
+    dp.guards = {std::nullopt, std::nullopt, 5, std::nullopt, std::nullopt,
+                 std::nullopt, std::nullopt};
+    dp.witchPoisons = {std::nullopt, 5};                       // n2 poison the protected civ5
+    dp.witchSaves = {false, false};                           // n3/n4: witch declines to save
+    dp.nightKills = {std::nullopt, std::nullopt, 5, 4};        // n3 knife civ5 ; n4 knife guardian
+
+    Game game(board, dp);
+    EXPECT_EQ(game.run(), GameResult::WolfWins);
+    EXPECT_TRUE(game.state().find(3)->isAlive());                            // witch NOT reflected
+    EXPECT_FALSE(game.state().find(3)->hasDeathCause(DeathCause::Poisoned));
+    EXPECT_FALSE(game.state().find(5)->hasDeathCause(DeathCause::Poisoned)); // poison was nullified
+    EXPECT_TRUE(game.state().find(5)->hasDeathCause(DeathCause::Killed));    // civ5 died later by knife
+}
+
+TEST(Game, MechanicGuardNonePoison) {
+    // None: the mechanic learned-guard blocks nothing, so the poisoned civ5 dies and
+    // the witch is unharmed (no reflect). The guardian is knifed on n3 for the win.
+    Board board;
+    board.name = "none";
+    board.roster = {{RoleKind::Werewolf, 1}, {RoleKind::MechanicWolf, 1}, {RoleKind::Witch, 1},
+                    {RoleKind::Guardian, 1}, {RoleKind::Civilian, 1}};
+    board.config.winRule = WinRule::KillAll;
+    board.config.sheriffEnabled = false;
+    board.config.mechanic.poisonReflect = PoisonReflect::None;
+
+    ScriptedDecisionProvider dp;
+    dp.mechanicLearns = {4};  // n1 learn the guardian
+    dp.guards = {std::nullopt, std::nullopt, 5, std::nullopt, std::nullopt};
+    dp.witchPoisons = {std::nullopt, 5};                       // n2 poison civ5 (guard blocks nothing)
+    dp.witchSaves = {false};                                  // n3: witch declines to save guardian
+    dp.nightKills = {std::nullopt, std::nullopt, 4};          // n3 knife guardian -> wolf win
+
+    Game game(board, dp);
+    EXPECT_EQ(game.run(), GameResult::WolfWins);
+    EXPECT_FALSE(game.state().find(5)->isAlive());                          // poisoned civ5 died
+    EXPECT_TRUE(game.state().find(5)->hasDeathCause(DeathCause::Poisoned));
+    EXPECT_TRUE(game.state().find(3)->isAlive());                           // witch NOT reflected
+    EXPECT_FALSE(game.state().find(3)->hasDeathCause(DeathCause::Poisoned));
 }

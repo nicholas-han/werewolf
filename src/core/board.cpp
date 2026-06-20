@@ -52,6 +52,10 @@ Board makeBoard12_PsychicMechanic() {
         {RoleKind::Guardian, 1},
         {RoleKind::Civilian, 4},
     };
+    // §3: this board's mechanic learned-guard reflects poison back at the poisoner
+    // (the protected player lives, the witch dies). Set explicitly — this is the
+    // template for configuring a new board's per-role mechanics ("板子相关变量").
+    board.config.mechanic.poisonReflect = PoisonReflect::ReflectToPoisoner;
     return board;
 }
 

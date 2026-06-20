@@ -183,6 +183,31 @@ TEST(Game, HunterCannotShootWhenPoisoned) {
     EXPECT_TRUE(game.state().find(2)->hasDeathCause(DeathCause::Poisoned));
 }
 
+TEST(Game, HunterShootsWhenBoardAllowsPoisonedShot) {
+    // §2 config: hunter.shotBlockedBy = {} -> poison no longer blocks the shot, so a
+    // poisoned hunter still fires at dawn. seats: 1 wolf, 2 hunter, 3 witch, 4/5 civ.
+    Board board;
+    board.name = "hunter-poison-allowed";
+    board.roster = {{RoleKind::Werewolf, 1}, {RoleKind::Hunter, 1},
+                    {RoleKind::Witch, 1}, {RoleKind::Civilian, 2}};
+    board.config.winRule = WinRule::KillAll;
+    board.config.sheriffEnabled = false;
+    board.config.hunter.shotBlockedBy = {};  // nothing blocks the shot
+
+    ScriptedDecisionProvider dp;
+    // Night 1: wolves knife civ 4; witch poisons hunter 2. Hunter dies poisoned but —
+    // with poison no longer a block — shoots wolf 1 at dawn -> all wolves out -> town.
+    dp.nightKills = {4};
+    dp.witchPoisons = {2};
+    dp.hunterShots = {1};
+
+    Game game(board, dp);
+    EXPECT_EQ(game.run(), GameResult::TownWins);
+    EXPECT_FALSE(game.state().find(1)->isAlive());                     // wolf was shot
+    EXPECT_TRUE(game.state().find(1)->hasDeathCause(DeathCause::Shot));
+    EXPECT_TRUE(game.state().find(2)->hasDeathCause(DeathCause::Poisoned));
+}
+
 TEST(Game, KnifeAndPoisonRecordBothCausesAndBlockShot) {
     // 同刀同毒 on the hunter: both causes recorded, poison blocks the shot (§5.2/§2).
     // KillAll: 1 wolf, 1 witch, 1 hunter, 1 civilian. seats: 1 wolf, 2 witch, 3 hunter, 4 civ.

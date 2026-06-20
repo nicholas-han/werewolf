@@ -1,5 +1,6 @@
 #include "core/roles/role.h"
 
+#include <algorithm>
 #include <string>
 
 #include "core/abilities/role_abilities.h"
@@ -21,14 +22,18 @@ std::unique_ptr<Role> makeRole(RoleKind kind, const BoardConfig& config) {
         case RoleKind::Witch: {
             auto r = std::make_unique<Role>(kind, "Witch", Faction::Town, SubKind::PowerRole);
             r->addAbility(std::make_unique<WitchPotions>(config.witchSelfRescue,
-                                                         config.witchBothPotionsSameNight));
+                                                         config.witchBothPotionsSameNight,
+                                                         config.mechanic.bigKnifePiercesAntidote));
             return r;
         }
         case RoleKind::Hunter: {
             auto r = std::make_unique<Role>(kind, "Hunter", Faction::Town, SubKind::PowerRole);
-            r->addAbility(std::make_unique<DeathTriggerShoot>(
-                "HunterShot", std::vector<DeathCause>{DeathCause::Poisoned}));
-            r->addAbility(std::make_unique<HunterGunCheck>());  // nightly 验枪 gesture
+            const std::vector<DeathCause>& blocked = config.hunter.shotBlockedBy;
+            const bool poisonBlocks =
+                std::find(blocked.begin(), blocked.end(), DeathCause::Poisoned) != blocked.end();
+            r->addAbility(std::make_unique<DeathTriggerShoot>("HunterShot", blocked));
+            r->addAbility(std::make_unique<HunterGunCheck>(  // nightly 验枪 gesture
+                config.mechanic.poisonReflect, poisonBlocks));
             return r;
         }
         case RoleKind::Guardian: {
@@ -40,8 +45,7 @@ std::unique_ptr<Role> makeRole(RoleKind kind, const BoardConfig& config) {
             auto r = std::make_unique<Role>(kind, "WolfGun", Faction::Wolf, SubKind::None);
             r->addAbility(std::make_unique<NightKill>());
             r->addAbility(std::make_unique<DeathTriggerShoot>(
-                "WolfGunShot",
-                std::vector<DeathCause>{DeathCause::Poisoned, DeathCause::BlownUp}));
+                "WolfGunShot", config.wolfGun.shotBlockedBy));
             return r;
         }
         case RoleKind::Psychic: {
@@ -58,7 +62,8 @@ std::unique_ptr<Role> makeRole(RoleKind kind, const BoardConfig& config) {
             r->addAbility(std::make_unique<MechanicLearnedInspect>());
             r->addAbility(std::make_unique<MechanicLearnedWitch>(config.witchBothPotionsSameNight));
             r->addAbility(std::make_unique<MechanicLearnedProtect>(config.guardConsecutiveSameTarget));
-            r->addAbility(std::make_unique<MechanicLearnedShoot>());
+            r->addAbility(std::make_unique<MechanicLearnedShoot>(
+                config.mechanic.learnedHunterShotBlockedBy));
             return r;
         }
         case RoleKind::Civilian:

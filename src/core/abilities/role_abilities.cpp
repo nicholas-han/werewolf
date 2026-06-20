@@ -46,29 +46,41 @@ void WitchPotions::actAtNight(NightContext& ctx, GameState& state, Player& owner
                               DecisionProvider& provider) {
     bool savedThisNight = false;
 
-    // Antidote: only offered while unused, and only for the NORMAL knife
-    // (BRD §2 死讯可见性). The mechanic's 破盾大刀 is a guaranteed kill — it ignores
-    // the guard AND the antidote, and the witch is never told its target (§2/§5.2),
-    // so ctx.bigKnifeTarget is deliberately not surfaced here.
+    // Self-rescue policy (BRD §2). First board: Never.
+    // Never: never; FirstNightOnly: only night 1; Always: every night (§2).
+    const bool selfRescueAllowed =
+        selfRescue_ == WitchSelfRescue::Always ||
+        (selfRescue_ == WitchSelfRescue::FirstNightOnly && state.day == 1);
+
+    // Offer the antidote on `target`, honoring the self-rescue policy. On accept,
+    // record the save, spend the antidote, and mark the night. Returns whether saved.
+    // Shared by the normal knife and the (configurably saveable) 破盾大刀 below.
+    auto trySave = [&](int target) -> bool {
+        if (target == owner.id() && !selfRescueAllowed) return false;  // cannot self-rescue
+        if (!provider.chooseWitchSave(state, owner.id(), target)) return false;
+        ctx.savedTarget = target;
+        state.witchAntidoteAvailable = false;
+        savedThisNight = true;
+        return true;
+    };
+
+    // Antidote vs the NORMAL knife (BRD §2 死讯可见性). The 破盾大刀 is handled below.
     if (state.witchAntidoteAvailable && ctx.wolfTarget.has_value()) {
         const int knifed = *ctx.wolfTarget;
-        // Self-rescue policy (BRD §2). First board: Never.
-        // Never: never; FirstNightOnly: only night 1; Always: every night (§2).
-        const bool selfRescueAllowed =
-            selfRescue_ == WitchSelfRescue::Always ||
-            (selfRescue_ == WitchSelfRescue::FirstNightOnly && state.day == 1);
-        if (knifed != owner.id() || selfRescueAllowed) {
-            if (provider.chooseWitchSave(state, owner.id(), knifed)) {
-                ctx.savedTarget = knifed;
-                state.witchAntidoteAvailable = false;
-                savedThisNight = true;
-            }
-        } else {
+        if (!trySave(knifed) && knifed == owner.id() && !selfRescueAllowed) {
             // She is the knifed one but cannot self-rescue: still tell her she was
             // knifed (BRD §2 死讯可见性; e.g. a guard may secretly save her).
             // Directed — only the witch may learn this (§11).
             provider.notifyPlayer(owner.id(), "【女巫】你今晚被刀（无法自救）");
         }
+    }
+
+    // 破盾大刀 antidote: by default the big knife pierces the antidote and stays
+    // hidden (§2), so it is not surfaced. When the board forbids piercing, offer its
+    // target like a normal knife — one antidote, so only if she has not saved yet.
+    if (!bigKnifePiercesAntidote_ && !savedThisNight && state.witchAntidoteAvailable &&
+        ctx.bigKnifeTarget.has_value()) {
+        trySave(*ctx.bigKnifeTarget);
     }
 
     // Poison: blocked this night if she saved and the board forbids two potions
@@ -217,9 +229,9 @@ void MechanicLearnedProtect::actAtNight(NightContext& ctx, GameState& state, Pla
 void MechanicLearnedShoot::onDeath(GameState& state, Player& owner, DecisionProvider& provider,
                                    std::vector<PendingDeath>& out) {
     if (state.mechanicLearned != RoleKind::Hunter || !state.mechanicAbilitiesActive()) return;
-    // Hunter rule (poison blocks); also a self-destruct never shoots.
-    if (owner.hasDeathCause(DeathCause::Poisoned) || owner.hasDeathCause(DeathCause::BlownUp)) {
-        return;
+    // A blocked death cause forbids the shot (§2, board-configurable: 毒 + 自爆).
+    for (DeathCause c : blocked_) {
+        if (owner.hasDeathCause(c)) return;
     }
     if (std::optional<int> target =
             provider.chooseHunterShot(state, owner.id(), aliveIds(state, owner.id()))) {
@@ -231,13 +243,19 @@ void HunterGunCheck::actAtNight(NightContext& ctx, GameState& /*state*/, Player&
                                 DecisionProvider& provider) {
     // The hunter cannot shoot if he will die poisoned tonight — by the real witch
     // OR the mechanic's learned witch (§2). A mechanic learned-guard on the hunter
-    // reflects the poison away (he survives -> can shoot), mirroring the dawn rule
+    // saves him from poison (he survives -> can shoot) UNLESS the board's reflect
+    // mode is None, in which case the guard blocks nothing — mirroring the dawn rule
     // in game.cpp. This runs after all poison is set (night order 43, §3).
     const int self = owner.id();
-    const bool guardReflects = ctx.mechanicGuardTarget && *ctx.mechanicGuardTarget == self;
+    const bool guardSaves = poisonReflect_ != PoisonReflect::None &&
+                            ctx.mechanicGuardTarget && *ctx.mechanicGuardTarget == self;
     const bool poisonedByWitch = ctx.poisonTarget && *ctx.poisonTarget == self;
     const bool poisonedByMechWitch = ctx.mechPoisonTarget && *ctx.mechPoisonTarget == self;
-    const bool canShoot = guardReflects || !(poisonedByWitch || poisonedByMechWitch);
+    const bool diesPoisoned = (poisonedByWitch || poisonedByMechWitch) && !guardSaves;
+    // If the board does not block the shot on poison at all, the hunter can always
+    // shoot tonight (poison is the only night-determined block); otherwise he can
+    // shoot iff he will not die poisoned.
+    const bool canShoot = !poisonBlocksShot_ || !diesPoisoned;
     provider.onHunterGunCheck(self, canShoot);
 }
 

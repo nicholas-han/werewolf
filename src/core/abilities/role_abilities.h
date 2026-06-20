@@ -37,8 +37,13 @@ public:
 
 class WitchPotions : public Ability, public NightActor {
 public:
-    explicit WitchPotions(WitchSelfRescue selfRescue, bool bothPotionsSameNight)
-        : selfRescue_(selfRescue), bothPotionsSameNight_(bothPotionsSameNight) {}
+    // `bigKnifePiercesAntidote` mirrors the board rule (§2): when false, the witch
+    // is also offered the mechanic's 破盾大刀 target (otherwise it stays hidden and
+    // unsaveable). Default true = the canonical hidden/unsaveable big knife.
+    WitchPotions(WitchSelfRescue selfRescue, bool bothPotionsSameNight,
+                 bool bigKnifePiercesAntidote = true)
+        : selfRescue_(selfRescue), bothPotionsSameNight_(bothPotionsSameNight),
+          bigKnifePiercesAntidote_(bigKnifePiercesAntidote) {}
 
     std::string name() const override { return "WitchPotions"; }
     int nightOrder() const override { return 30; }
@@ -49,6 +54,7 @@ public:
 private:
     WitchSelfRescue selfRescue_;
     bool bothPotionsSameNight_;
+    bool bigKnifePiercesAntidote_;
 };
 
 // Guardian's nightly protect (§2). Acts before the wolves; records the target in
@@ -153,12 +159,19 @@ private:
     bool allowConsecutive_;
 };
 
-// Learned 猎人: death-triggered shot, blocked by poison (reuses the hunter rule).
+// Learned 猎人: death-triggered shot. `blocked` lists the death causes that forbid
+// the shot (§2, board-configurable); defaults to 毒 + 自爆 (the mechanic is a wolf).
 class MechanicLearnedShoot : public Ability, public DeathTrigger {
 public:
+    explicit MechanicLearnedShoot(
+        std::vector<DeathCause> blocked = {DeathCause::Poisoned, DeathCause::BlownUp})
+        : blocked_(std::move(blocked)) {}
     std::string name() const override { return "MechanicLearnedShoot"; }
     void onDeath(GameState& state, Player& owner, DecisionProvider& provider,
                  std::vector<PendingDeath>& out) override;
+
+private:
+    std::vector<DeathCause> blocked_;
 };
 
 // Hunter's nightly "can I shoot?" gesture (§2/§5.1, all boards): a private cue to
@@ -166,6 +179,16 @@ public:
 // this night). Informational only — the actual block lives in DeathTriggerShoot.
 class HunterGunCheck : public Ability, public NightActor {
 public:
+    // Mirrors two board rules so the 验枪 gesture matches the real shot block:
+    //  - `poisonReflect` (§3): whether a mechanic learned-guard on the hunter saves
+    //    him from poison (and so lets him shoot).
+    //  - `poisonBlocksShot` (§2): whether poison forbids the shot at all; false when
+    //    the board's hunter.shotBlockedBy omits Poisoned (poisoned hunter may shoot).
+    // Both default to the canonical rules; moot on boards with no mechanic/poison.
+    explicit HunterGunCheck(PoisonReflect poisonReflect = PoisonReflect::ReflectToPoisoner,
+                            bool poisonBlocksShot = true)
+        : poisonReflect_(poisonReflect), poisonBlocksShot_(poisonBlocksShot) {}
+
     std::string name() const override { return "HunterGunCheck"; }
     // After ALL poison is set: the real witch (30) AND, on the psychic board, the
     // mechanic's learned witch (42). Sitting at 43 keeps it right after the witch on
@@ -175,6 +198,10 @@ public:
     std::string nightCue() const override { return "猎人"; }
     void actAtNight(NightContext& ctx, GameState& state, Player& owner,
                     DecisionProvider& provider) override;
+
+private:
+    PoisonReflect poisonReflect_;
+    bool poisonBlocksShot_;
 };
 
 // Death-triggered shot, reused by Hunter and WolfGun (§2). `blocked` lists the
