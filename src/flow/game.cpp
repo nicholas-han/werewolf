@@ -343,17 +343,35 @@ GameResult Game::runNight() {
     if (ctx.wolfTarget && guarded(*ctx.wolfTarget) == saved(*ctx.wolfTarget)) {
         batch.push_back({*ctx.wolfTarget, DeathCause::Killed});
     }
-    // 破盾大刀: a guaranteed kill — ignores BOTH the guard and the witch's antidote
-    // (the witch is never even told its target, §2/§5.2). Always dies.
+    const MechanicWolfRules& mech = board_.config.mechanic;
+    // 破盾大刀: by default a guaranteed kill — pierces BOTH the guard and the witch's
+    // antidote, and stays hidden from the witch (§2/§5.2). Each pierce is board-
+    // configurable (§2): without bigKnifePiercesGuard a guarded target survives;
+    // without bigKnifePiercesAntidote the witch is offered the target (WitchPotions)
+    // and a save blocks it.
     if (ctx.bigKnifeTarget) {
-        batch.push_back({*ctx.bigKnifeTarget, DeathCause::Killed});
+        const int bt = *ctx.bigKnifeTarget;
+        const bool guardBlocks = !mech.bigKnifePiercesGuard && guarded(bt);
+        const bool antidoteBlocks = !mech.bigKnifePiercesAntidote && saved(bt);
+        if (!guardBlocks && !antidoteBlocks) {
+            batch.push_back({bt, DeathCause::Killed});
+        }
     }
     // Poison: the guard does not block it — EXCEPT the mechanic's learned guard,
-    // which reflects it (the poisoner dies, the protected player lives, §2).
+    // whose effect on a poison aimed at its protected target is board-configurable
+    // (§3, mechanic.poisonReflect):
+    //   None             -> no protection; the target still dies.
+    //   ProtectOnly      -> the target lives; the poisoner is unharmed.
+    //   ReflectToPoisoner-> the target lives AND the poison reflects onto the poisoner.
     auto applyPoison = [&](std::optional<int> tgt, std::optional<int> src) {
         if (!tgt) return;
-        if (ctx.mechanicGuardTarget && *ctx.mechanicGuardTarget == *tgt && src) {
-            batch.push_back({*src, DeathCause::Poisoned});  // reflected to the poisoner
+        const bool mechGuarded = ctx.mechanicGuardTarget && *ctx.mechanicGuardTarget == *tgt;
+        if (mechGuarded && mech.poisonReflect != PoisonReflect::None) {
+            // Target is protected from the poison. Reflect onto the poisoner only in
+            // ReflectToPoisoner mode; ProtectOnly simply lets the target live.
+            if (mech.poisonReflect == PoisonReflect::ReflectToPoisoner && src) {
+                batch.push_back({*src, DeathCause::Poisoned});
+            }
         } else {
             batch.push_back({*tgt, DeathCause::Poisoned});
         }

@@ -44,6 +44,14 @@ enum class WitchSelfRescue { Never, FirstNightOnly, Always };
 // Exile-vote tie handling (BRD §6).
 enum class ExileTieRule { RunoffThenNoExile };
 
+// MechanicWolf learned-guard vs. poison (BRD §3, psychic board). When the
+// mechanic's learned 守卫 protects the very player a poison is aimed at:
+//   None             -> the guard does NOT block poison; the target still dies.
+//   ProtectOnly      -> the target is saved, but the poisoner is unharmed.
+//   ReflectToPoisoner-> the target is saved AND the poison reflects back, killing
+//                       the poisoner (e.g. the witch). This is the current default.
+enum class PoisonReflect { None, ProtectOnly, ReflectToPoisoner };
+
 // --- Small to_string helpers for logging / test output ---
 
 constexpr std::string_view to_string(Faction f) {
@@ -102,6 +110,15 @@ constexpr std::string_view to_string(RoleKind r) {
         case RoleKind::WolfGun: return "WolfGun";
         case RoleKind::Psychic: return "Psychic";
         case RoleKind::MechanicWolf: return "MechanicWolf";
+    }
+    return "?";
+}
+
+constexpr std::string_view to_string(PoisonReflect p) {
+    switch (p) {
+        case PoisonReflect::None: return "None";
+        case PoisonReflect::ProtectOnly: return "ProtectOnly";
+        case PoisonReflect::ReflectToPoisoner: return "ReflectToPoisoner";
     }
     return "?";
 }
