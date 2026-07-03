@@ -10,6 +10,7 @@ import unittest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
 from orchestrator import knowledge  # noqa: E402
+from orchestrator.runner import resolve_knowledge_mode  # noqa: E402
 
 GLOSSARY = """# 术语表
 
@@ -196,6 +197,35 @@ class KnowledgeTest(unittest.TestCase):
     def test_missing_docs_dir_is_empty_not_error(self):
         out = knowledge.load_domain_knowledge("Seer", 1, docs_dir=self.dir / "nope")
         self.assertEqual(out, "")
+
+
+class ResolveKnowledgeModeTest(unittest.TestCase):
+    """auto 的解析：本地 ollama 与 8k 小上下文云端模型降级 lite，其余 full。"""
+
+    def test_explicit_modes_pass_through(self):
+        for mode in ("full", "lite", "off"):
+            self.assertEqual(resolve_knowledge_mode(mode, "moonshot", "moonshot-v1-8k"), mode)
+
+    def test_auto_ollama_is_lite(self):
+        self.assertEqual(resolve_knowledge_mode("auto", "ollama", "deepseek-r1:14b"), "lite")
+        self.assertEqual(resolve_knowledge_mode("auto", "ollama", None), "lite")
+
+    def test_auto_cloud_is_full(self):
+        self.assertEqual(resolve_knowledge_mode("auto", "deepseek", None), "full")
+        self.assertEqual(resolve_knowledge_mode("auto", "fake", None), "full")
+
+    def test_auto_8k_models_are_lite(self):
+        # explicit 8k pick → lite (cloud context overflow is a hard 400 error)
+        self.assertEqual(resolve_knowledge_mode("auto", "moonshot", "moonshot-v1-8k"), "lite")
+        self.assertEqual(resolve_knowledge_mode("auto", "openai-compat", "my-8K-chat"), "lite")
+        # 32k/128k must NOT be mistaken for 8k ("…28k" suffix)
+        self.assertEqual(resolve_knowledge_mode("auto", "moonshot", "moonshot-v1-32k"), "full")
+        self.assertEqual(resolve_knowledge_mode("auto", "zhipu", "some-128k-model"), "full")
+
+    def test_auto_moonshot_preset_default_is_full(self):
+        # preset default was bumped 8k→32k; the model=None path must resolve via
+        # the preset and land on full
+        self.assertEqual(resolve_knowledge_mode("auto", "moonshot", None), "full")
 
 
 class RealDocsSmokeTest(unittest.TestCase):

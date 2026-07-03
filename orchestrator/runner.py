@@ -10,12 +10,13 @@ from __future__ import annotations
 import datetime
 import os
 import pathlib
+import re
 import sys
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
 from orchestrator.brain import AgentBrain
-from orchestrator.cloud import build_client
+from orchestrator.cloud import PROVIDER_PRESETS, build_client
 from orchestrator.engine import EngineProcess
 from orchestrator.llm import FakeLlmClient, LlmClient, OllamaClient
 from orchestrator.recorder import Recorder
@@ -49,6 +50,24 @@ _PUBLIC_LABELS = {
 
 def _default_engine_path() -> str:
     return str(_REPO_ROOT / "build" / "werewolf")
+
+
+def resolve_knowledge_mode(mode: str, provider: str, model: Optional[str]) -> str:
+    """auto → lite for small-context backends, full otherwise.
+
+    lite when: 本地 ollama（16k ctx 还要装对局日志，Ollama 超窗会静默截掉 prompt 头部）；
+    或模型名带「8k」档位（如 moonshot-v1-8k——云端超窗是 400 硬错误，每个 ask 都会
+    回退默认决策）。上下文大小没有跨厂商的统一查询接口，故用名字启发式；`(?<!\\d)`
+    避免把 32k/128k 里的 "…28k" 误判成 8k。"""
+    if mode != "auto":
+        return mode
+    if provider == "ollama":
+        return "lite"
+    name = model or ""
+    if not name:
+        preset = PROVIDER_PRESETS.get(provider)
+        name = preset.default_model if preset else ""
+    return "lite" if re.search(r"(?<!\d)8k", name.lower()) else "full"
 
 
 @dataclass
@@ -158,9 +177,8 @@ class Orchestrator:
         )
         self.recorder.on_game_start(msg)
         roster = {s["seat"]: s["name"] for s in msg.get("seats", [])}
-        knowledge_mode = self.cfg.knowledge
-        if knowledge_mode == "auto":
-            knowledge_mode = "lite" if self.cfg.provider == "ollama" else "full"
+        knowledge_mode = resolve_knowledge_mode(self.cfg.knowledge, self.cfg.provider,
+                                                self.cfg.model)
         for s in msg.get("seats", []):
             seat, name = s["seat"], s["name"]
             if seat == self.cfg.human_seat:
