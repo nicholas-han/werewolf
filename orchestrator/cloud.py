@@ -76,8 +76,10 @@ PROVIDER_PRESETS: dict[str, ProviderPreset] = {
         "DeepSeek", "https://api.deepseek.com/v1", "DEEPSEEK_API_KEY", "deepseek-v4-flash",
         models=("deepseek-v4-flash", "deepseek-v4-pro")),
     "moonshot": ProviderPreset(
-        "Moonshot / Kimi", "https://api.moonshot.cn/v1", "MOONSHOT_API_KEY", "moonshot-v1-8k",
-        models=("moonshot-v1-8k", "moonshot-v1-32k", "kimi-k2-0711-preview")),
+        # 默认 32k：8k 档装不下领域知识块（issue #20，full ≈ 12.5k–15k 汉字）——云端超窗
+        # 是 400 硬错误、整局回退默认决策；显式选 8k 模型时 runner 的 auto 会降级 lite。
+        "Moonshot / Kimi", "https://api.moonshot.cn/v1", "MOONSHOT_API_KEY", "moonshot-v1-32k",
+        models=("moonshot-v1-32k", "moonshot-v1-8k", "kimi-k2-0711-preview")),
     "zhipu": ProviderPreset(
         "智谱 GLM", "https://open.bigmodel.cn/api/paas/v4", "ZHIPU_API_KEY", "glm-4-flash",
         models=("glm-4-flash", "glm-4-plus", "glm-4-air")),

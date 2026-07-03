@@ -106,5 +106,91 @@ class BrainParseTest(unittest.TestCase):
         self.assertIn("我怀疑P5是狼", content)
 
 
+class KnowledgeAndSaidTest(unittest.TestCase):
+    """issue #20: domain-knowledge injection + own-speech (口径) memory."""
+
+    def test_said_records_own_speech_and_wolfchat(self):
+        # WolfChat is NOT echoed back by the engine — `said` is the only record.
+        b = _brain("今晚刀 P3，我明天悍跳预言家给 P4 发查杀")
+        b.answer({"t": "ask", "id": 1, "seat": 6, "qtype": "speak", "kind": "WolfChat",
+                  "day": 1, "phase": "Night"})
+        self.assertEqual(len(b.said), 1)
+        msgs = b._render({"t": "ask", "id": 2, "seat": 6, "qtype": "speak", "kind": "Statement",
+                          "day": 1, "phase": "Day"})
+        content = msgs[0]["content"]
+        self.assertIn("你自己此前的发言记录", content)
+        self.assertIn("狼队夜聊", content)
+        self.assertIn("悍跳预言家给 P4 发查杀", content)
+
+    def test_said_ignores_choose_and_empty(self):
+        b = _brain('{"choice": 3}')
+        b.answer({"t": "ask", "id": 1, "seat": 6, "qtype": "choose", "kind": "Vote",
+                  "candidates": [{"seat": 3, "name": "P3"}], "day": 1, "phase": "Day"})
+        self.assertEqual(b.said, [])
+        # empty speech (e.g. pure-<think> output) must not pollute the ledger
+        b2 = _brain("<think>还没想好</think>")
+        b2.answer({"t": "ask", "id": 2, "seat": 6, "qtype": "speak", "kind": "Statement",
+                   "day": 1, "phase": "Day"})
+        self.assertEqual(b2.said, [])
+
+    def test_said_skips_wolfchat_pass(self):
+        # the engine discards pass-like wolf-chat lines (isWolfChatPass) — they are
+        # no commitment and must not enter the 口径 ledger either
+        b = _brain("过")
+        b.answer({"t": "ask", "id": 1, "seat": 6, "qtype": "speak", "kind": "WolfChat",
+                  "day": 2, "phase": "Night"})
+        self.assertEqual(b.said, [])
+        # but "过" as a PUBLIC statement is a real (if lazy) speech — still recorded
+        b.answer({"t": "ask", "id": 2, "seat": 6, "qtype": "speak", "kind": "Statement",
+                  "day": 2, "phase": "Day"})
+        self.assertEqual(len(b.said), 1)
+
+    def test_system_prompt_gets_knowledge_and_is_stable(self):
+        b = AgentBrain(seat=3, name="P3", llm=StubLlm("ok"), role="Seer", faction="Town",
+                       board=1, roster={3: "P3", 5: "P5"})
+        self.assertTrue(b.knowledge)
+        sp1 = b._system_prompt()
+        self.assertIn("【领域知识", sp1)
+        self.assertIn("警徽流", sp1)          # seer knowledge includes badge-flow play
+        # byte-stability must survive a whole game's worth of events and answers —
+        # anything ask-dependent leaking into system would shatter the prefix cache
+        b.observe({"vis": "public", "etype": "phase", "day": 1, "phase": "Day",
+                   "text": "第 1 天，天亮了"})
+        b.observe({"vis": "public", "etype": "narration", "text": "P5 出局（放逐）"})
+        b.answer({"t": "ask", "id": 1, "seat": 3, "qtype": "speak", "kind": "Statement",
+                  "day": 1, "phase": "Day"})
+        b.answer({"t": "ask", "id": 2, "seat": 3, "qtype": "choose", "kind": "Inspect",
+                  "candidates": [{"seat": 5, "name": "P5"}], "allowSkip": True,
+                  "day": 1, "phase": "Night"})
+        self.assertEqual(sp1, b._system_prompt())
+
+    def test_knowledge_off_mode(self):
+        b = AgentBrain(seat=3, name="P3", llm=StubLlm("ok"), role="Seer", faction="Town",
+                       board=1, knowledge_mode="off")
+        self.assertEqual(b.knowledge, "")
+        self.assertNotIn("【领域知识", b._system_prompt())
+
+    def test_knowledge_built_on_deal_event(self):
+        b = AgentBrain(seat=5, name="P5", llm=StubLlm("ok"), board=2)
+        self.assertEqual(b.knowledge, "")
+        b.observe({"vis": "private", "seat": 5, "etype": "deal",
+                   "data": {"role": "WolfGun", "faction": "Wolf"}, "text": "你的身份是：狼枪"})
+        self.assertTrue(b.knowledge)
+        self.assertIn("狼枪", b.knowledge)
+
+    def test_checklist_injected_by_kind(self):
+        b = AgentBrain(seat=6, name="P6", llm=StubLlm("ok"), role="Werewolf", faction="Wolf",
+                       board=1)
+        msgs = b._render({"t": "ask", "id": 9, "seat": 6, "qtype": "choose", "kind": "NightKill",
+                          "candidates": [{"seat": 3, "name": "P3"}], "allowSkip": True,
+                          "day": 1, "phase": "Night"})
+        self.assertIn("【本次决策要点】", msgs[0]["content"])
+        # a seer never sees wolf checklists
+        s = AgentBrain(seat=3, name="P3", llm=StubLlm("ok"), role="Seer", faction="Town", board=1)
+        msgs = s._render({"t": "ask", "id": 9, "seat": 3, "qtype": "choose", "kind": "NightKill",
+                          "candidates": [{"seat": 6, "name": "P6"}], "day": 1, "phase": "Night"})
+        self.assertNotIn("【本次决策要点】", msgs[0]["content"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
