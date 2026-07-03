@@ -72,7 +72,12 @@ class Config:
     api_key_env: Optional[str] = None  # cloud：覆盖装 key 的环境变量名（默认随预设）
     json_object: bool = False        # cloud：对 choose/confirm 下发 response_format=json_object
     request_timeout: int = 600
-    num_ctx: int = 8192
+    # 16k：lite 知识块（≈4k 字符）+ 逐日增长的对局日志 + 思考/输出预算。full 知识块
+    # 实测 12.5k–15k 字符（狼位最大）——只适合云端大上下文；本地塞 full 会在中盘溢出，
+    # 且 Ollama 溢出时**静默截掉 prompt 头部**（恰好是身份与知识块），故 auto 给 ollama 配 lite。
+    num_ctx: int = 16384
+    # 领域知识注入（issue #20）：auto=云端 full / 本地 ollama lite；或显式 full | lite | off。
+    knowledge: str = "auto"
     wolf_chat_rounds: int = 2  # §5.4: max wolf night-chat rounds (natural early-stop)
     interrupts: bool = False   # §2/§7.2: per-speech 自爆/退水 interrupts (slow; default off)
     # Optional explicit per-seat factory; overrides provider/model when set (tests).
@@ -153,6 +158,9 @@ class Orchestrator:
         )
         self.recorder.on_game_start(msg)
         roster = {s["seat"]: s["name"] for s in msg.get("seats", [])}
+        knowledge_mode = self.cfg.knowledge
+        if knowledge_mode == "auto":
+            knowledge_mode = "lite" if self.cfg.provider == "ollama" else "full"
         for s in msg.get("seats", []):
             seat, name = s["seat"], s["name"]
             if seat == self.cfg.human_seat:
@@ -161,6 +169,7 @@ class Orchestrator:
                 self.brains[seat] = AgentBrain(
                     seat=seat, name=name, llm=self._make_llm(seat),
                     persona=self.cfg.personas.get(seat, ""), roster=roster,
+                    board=self.cfg.board, knowledge_mode=knowledge_mode,
                 )
 
     def _route_event(self, ev: dict) -> None:

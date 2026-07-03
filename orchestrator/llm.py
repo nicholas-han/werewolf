@@ -67,7 +67,7 @@ class OllamaClient(LlmClient):
     """
 
     def __init__(self, model: str = "deepseek-r1:14b", host: str = "http://localhost:11434",
-                 num_ctx: int = 8192, top_p: float = 0.95, timeout: int = 600,
+                 num_ctx: int = 16384, top_p: float = 0.95, timeout: int = 600,
                  num_predict: int = 2048, think: bool = True):
         self.model = model
         self.host = host.rstrip("/")

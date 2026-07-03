@@ -158,6 +158,9 @@ def main() -> None:
                     help="云端：对 choose/confirm 下发 response_format=json_object（加强结构化）")
     ap.add_argument("--timeout", type=int, default=None,
                     help="单次模型调用软超时（秒）；默认 本地 600 / 云端 60")
+    ap.add_argument("--knowledge", default="auto", choices=["auto", "full", "lite", "off"],
+                    help="领域知识注入（issue #20）：auto=云端 full/本地 ollama lite（默认）；"
+                         "full=按角色/板子全量（约 12–15k 字符，适合云端）；lite=精简；off=关")
     ap.add_argument("--wolf-chat-rounds", type=int, default=2, help="狼队夜聊最大轮数（默认2，整轮全过则提前结束）")
     ap.add_argument("--interrupts", action="store_true", help="逐发言中断：每位发言后给自爆/退水机会（最忠实但慢；默认关）")
     ap.add_argument("--fake", action="store_true", help="等价于 --provider fake")
@@ -189,6 +192,7 @@ def main() -> None:
         "provider": provider, "model": model, "ollama_host": args.ollama_host,
         "base_url": args.base_url, "api_key_env": args.api_key_env,
         "json_object": args.json_object, "request_timeout": timeout,
+        "knowledge": args.knowledge,
         "wolf_chat_rounds": args.wolf_chat_rounds, "interrupts": args.interrupts,
     }
     if args.engine:

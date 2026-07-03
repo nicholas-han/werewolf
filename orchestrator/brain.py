@@ -14,9 +14,16 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
+from orchestrator import knowledge as knowledge_mod
 from orchestrator.llm import LlmClient
 
 _THINK = re.compile(r"<think>(.*?)</think>", re.DOTALL)
+
+# Mirror of the engine's isWolfChatPass (json_decision_provider.cpp): pass-like
+# wolf-chat lines are discarded by the engine (not broadcast, not recorded), so
+# they must not enter the seat's 口径 ledger either.
+_WOLF_CHAT_PASS = {"过", "过。", "过.", "过~", "没有", "没有。", "没有了", "没有补充",
+                   "无", "略", "略过", "跳过", "pass", "Pass", "PASS", "(过)", "（过）"}
 
 _FACTION_GOAL = {
     "Wolf": "狼人阵营：刀杀/误导，淘汰所有神或所有民。",
@@ -63,10 +70,20 @@ class AgentBrain:
     persona: str = ""
     role: Optional[str] = None      # set from the private deal event
     faction: Optional[str] = None
+    board: int = 0                  # board id (1/2/3) for knowledge scoping
+    knowledge_mode: str = "full"    # full | lite | off (issue #20)
     view: list[dict] = field(default_factory=list)   # events visible to this seat
     roster: dict[int, str] = field(default_factory=dict)  # seat -> name (for 局势摘要)
     dead: set[int] = field(default_factory=set)           # seats observed out (public)
     notes: list[dict] = field(default_factory=list)       # own past <think> (scratchpad)
+    said: list[dict] = field(default_factory=list)        # own speeches (公开 + 狼聊——引擎
+    #   不回显自己的狼聊，这里是唯一记录；用于口径一致性)
+    knowledge: str = field(default="", repr=False)        # 领域知识块（发牌后固定，保证
+    #   system prompt 整局字节稳定 → 前缀缓存不被打碎)
+
+    def __post_init__(self) -> None:
+        if self.role:
+            self._build_knowledge()
 
     # --- view (memory) ---
     def observe(self, event: dict) -> None:
@@ -75,6 +92,7 @@ class AgentBrain:
             data = event.get("data", {})
             self.role = data.get("role", self.role)
             self.faction = data.get("faction", self.faction)
+            self._build_knowledge()
         elif event.get("etype") == "narration" and event.get("vis") == "public":
             # Track who's out from the public "<name> 出局" announcements (name+space is
             # unambiguous: "P1 出局" ⊄ "P12 出局"); only scan narration, not speeches.
@@ -82,6 +100,47 @@ class AgentBrain:
             for seat, name in self.roster.items():
                 if seat not in self.dead and f"{name} 出局" in text:
                     self.dead.add(seat)
+
+    def _build_knowledge(self) -> None:
+        """(Re)build the domain-knowledge block. Never raises — knowledge is an
+        enhancement; a missing/broken doc must not take a seat down."""
+        if self.knowledge_mode == "off":
+            self.knowledge = ""
+            return
+        try:
+            self.knowledge = knowledge_mod.load_domain_knowledge(
+                self.role or "", self.board, self.knowledge_mode)
+        except Exception:  # noqa: BLE001
+            self.knowledge = ""
+
+    def _said_section(self) -> str:
+        if not self.said:
+            return ""
+        recent = self.said[-8:]
+        head = "【你自己此前的发言记录（这是你的对外口径——保持一致，别自相矛盾，也别重复）】"
+        if any(s.get("kind") == "WolfChat" for s in recent):
+            head = ("【你自己此前的发言记录（保持口径一致，别自相矛盾，也别重复；"
+                    "标注「狼队夜聊」的只有狼队听到，白天发言绝不可引用）】")
+        lines = [head]
+        for s in recent:
+            t = s.get("text", "")
+            if len(t) > 240:
+                t = t[:240] + "…"
+            tag = {"WolfChat": "狼队夜聊", "LastWords": "遗言"}.get(s.get("kind"), "发言")
+            phase = "夜晚" if s.get("phase") == "Night" else "白天"
+            lines.append(f"- 第{s.get('day')}天·{phase}·{tag}：{t}")
+        return "\n".join(lines)
+
+    def _checklist_section(self, ask: dict) -> str:
+        """Per-ask checklist (kind-scoped). Injected at the USER-message tail so the
+        system prompt stays byte-stable for prefix caching."""
+        if self.knowledge_mode == "off" or not self.role:
+            return ""
+        try:
+            text = knowledge_mod.kind_checklist(ask.get("kind", ""), self.role, self.board)
+        except Exception:  # noqa: BLE001
+            return ""
+        return f"【本次决策要点】\n{text}" if text else ""
 
     def _notes_section(self) -> str:
         if not self.notes:
@@ -121,6 +180,17 @@ class AgentBrain:
         parsed, fallback = self._parse(ask, answer)
 
         reply: dict = {"t": "reply", "id": ask["id"], **parsed}
+        if qtype == "speak":
+            # Own-speech ledger (口径). The engine echoes my lines back into my view
+            # (public speech is broadcast to everyone; wolf chat goes private to each
+            # open wolf INCLUDING the speaker) — this section exists to re-surface
+            # them as "my commitments" so the model keeps a consistent story, not as
+            # the only record. Pass-like wolf-chat lines are discarded by the engine
+            # and are no commitment — skip them.
+            text = (parsed.get("text") or "").strip()
+            if text and not (ask.get("kind") == "WolfChat" and text in _WOLF_CHAT_PASS):
+                self.said.append({"day": ask.get("day"), "phase": ask.get("phase"),
+                                  "kind": ask.get("kind"), "text": text})
         if reasoning:
             reply["reasoning"] = reasoning
             # Scratchpad: remember my own private reasoning so later turns stay coherent
@@ -145,6 +215,7 @@ class AgentBrain:
             "fallback": fallback,
             "latency_ms": latency_ms,
             "usage": comp.usage,
+            "knowledge_chars": len(self.knowledge),
         }
         return reply, trace
 
@@ -160,6 +231,11 @@ class AgentBrain:
             lines.append(f"打法要点：{hint}")
         if self.persona:
             lines.append(f"风格：{self.persona}")
+        if self.knowledge:
+            lines += ["", "【领域知识：术语、打法与话术参考。内化使用——发言要像牌桌上的真人，"
+                          "不要照本宣科、不要提及或引用本资料。话术范例中的座位号与查验结果全是"
+                          "占位示意：实际发言必须用当前对局的真实座位与真实信息，禁止照抄、禁止虚构。】",
+                      self.knowledge, ""]
         lines += [
             "你可以先在 <think></think> 里思考；思考结束后再给出结果。输出约定（务必遵守）：",
             '- 选择类(choose)：思考后，最后必须单独输出一行 JSON，如 {"choice": 座位号} 或 {"choice": null}（跳过/弃权/空刀）。',
@@ -189,6 +265,9 @@ class AgentBrain:
         notes = self._notes_section()
         if notes:
             body += ["", notes]
+        said = self._said_section()
+        if said:
+            body += ["", said]
         sit = self._situation()
         if sit:
             body += ["", sit]
@@ -200,6 +279,9 @@ class AgentBrain:
             body.append("可选：" + opts + ("；也可不选（跳过/弃权）。" if ask.get("allowSkip") else "。"))
         elif qtype == "speak":
             body.append(self._speak_hint(ask))
+        tips = self._checklist_section(ask)
+        if tips:
+            body += ["", tips]
         return [{"role": "user", "content": "\n".join(body)}]
 
     def _speak_hint(self, ask: dict) -> str:
