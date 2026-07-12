@@ -229,6 +229,7 @@ speak 的 `kind`（`SpeechKind`）：`Statement`（白天发言；竞选发言�
   - confirm：默认 `false`（保守：不救/不上警/不退水/不自爆/归多人）。
   - speak：默认 `""`（视为过）。
 - **软超时** `--ask-timeout`（默认 **600s**）：超时同样回退到合法默认并记 moderator 事件。仅作防挂死——正常路径由 orchestrator 端的 AgentBrain 兜底保证及时回复（见 `ai_agents_design.md` §7.4）。本地推理模型慢，故默认放宽。
+- 引擎只接受 `id` 与当前 `ask.id` 相同的 `reply`。某次 ask 超时后才到达的旧 reply 会被丢弃，绝不能当作下一个玩家的回复。每次丢弃记一条 moderator 级 `status` 事件（`{staleReply:true, staleId, expectedId}`），便于排查 orchestrator 时序问题。
 - orchestrator 必须保证**对每个 `ask` 最终都回一个结构合法的 `reply`**；模型故障/超时由其本地兜底，不要让引擎空等。
 
 ---

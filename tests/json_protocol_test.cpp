@@ -140,7 +140,7 @@ TEST(JsonProtocol, ScriptedChooseReturnsChoiceAndEmitsAsk) {
 }
 
 TEST(JsonProtocol, NullChoiceAbstainsOnSkippable) {
-    std::istringstream in("{\"t\":\"reply\",\"choice\":null}\n");
+    std::istringstream in("{\"t\":\"reply\",\"id\":1,\"choice\":null}\n");
     std::ostringstream out;
     GameState s = board9State();
     JsonDecisionProvider p(in, out, "B", 1);
@@ -148,7 +148,7 @@ TEST(JsonProtocol, NullChoiceAbstainsOnSkippable) {
 }
 
 TEST(JsonProtocol, IllegalChoiceFallsBackForVote) {
-    std::istringstream in("{\"t\":\"reply\",\"choice\":99}\n");  // 99 not a candidate
+    std::istringstream in("{\"t\":\"reply\",\"id\":1,\"choice\":99}\n");  // 99 not a candidate
     std::ostringstream out;
     GameState s = board9State();
     JsonDecisionProvider p(in, out, "B", 1);
@@ -158,7 +158,7 @@ TEST(JsonProtocol, IllegalChoiceFallsBackForVote) {
 TEST(JsonProtocol, OutOfIntRangeChoiceFallsBack) {
     // 2^32+3 would narrow to seat 3 without a range guard; instead it must be
     // rejected and fall back to first-non-self (2), distinct from the aliased 3.
-    std::istringstream in("{\"t\":\"reply\",\"choice\":4294967299}\n");
+    std::istringstream in("{\"t\":\"reply\",\"id\":1,\"choice\":4294967299}\n");
     std::ostringstream out;
     GameState s = board9State();
     JsonDecisionProvider p(in, out, "B", 1);
@@ -207,7 +207,8 @@ TEST(JsonProtocol, AskTimeoutIgnoresReplyThatArrivesTooLate) {
     JsonDecisionProvider p(in, out, "B", 1);
     p.setAskTimeout(std::chrono::milliseconds(100));
     // A *valid* choice of seat 3, but delivered long after the deadline.
-    sb.deliverAfter("{\"t\":\"reply\",\"choice\":3}\n", std::chrono::milliseconds(500));
+    sb.deliverAfter("{\"t\":\"reply\",\"id\":1,\"choice\":3}\n",
+                    std::chrono::milliseconds(500));
 
     // Engine must fall back at the deadline rather than wait for the late reply,
     // so it returns the first-non-self default (2), not the tardy choice (3).
@@ -216,9 +217,35 @@ TEST(JsonProtocol, AskTimeoutIgnoresReplyThatArrivesTooLate) {
     sb.close();
 }
 
+TEST(JsonProtocol, LateReplyCannotPoisonNextAsk) {
+    PipeStreamBuf sb;
+    std::istream in(&sb);
+    std::ostringstream out;
+    GameState s = board9State();
+    JsonDecisionProvider p(in, out, "B", 1);
+    p.setAskTimeout(std::chrono::milliseconds(50));
+
+    // Ask id=1 times out. Its late answer is queued immediately before the real
+    // answer for id=2, exactly the ordering produced by a slow human/model.
+    EXPECT_EQ(p.chooseVote(s, 1, {1, 2, 3}), std::optional<int>(2));
+    sb.push("{\"t\":\"reply\",\"id\":1,\"choice\":3}\n"
+            "{\"t\":\"reply\",\"id\":2,\"choice\":2}\n");
+
+    // The stale id=1 choice (3) must be discarded; id=2 gets its own choice (2).
+    EXPECT_EQ(p.chooseVote(s, 1, {1, 2, 3}), std::optional<int>(2));
+
+    // The discard is recorded for the god-script — moderator-only, never public.
+    const std::string o = out.str();
+    EXPECT_NE(o.find("\"staleReply\":true"), std::string::npos);
+    EXPECT_NE(o.find("\"staleId\":1"), std::string::npos);
+    EXPECT_NE(o.find("\"expectedId\":2"), std::string::npos);
+    EXPECT_EQ(o.find("\"vis\":\"public\""), std::string::npos);
+    sb.close();
+}
+
 // With the timeout disabled (<=0), a real reply is still honored (no regression).
 TEST(JsonProtocol, AskTimeoutDisabledStillReadsReply) {
-    std::istringstream in("{\"t\":\"reply\",\"choice\":3}\n");
+    std::istringstream in("{\"t\":\"reply\",\"id\":1,\"choice\":3}\n");
     std::ostringstream out;
     GameState s = board9State();
     JsonDecisionProvider p(in, out, "B", 1);
@@ -247,7 +274,7 @@ TEST(JsonProtocol, ProviderDestructorDoesNotHangOnBlockedReader) {
 }
 
 TEST(JsonProtocol, ConfirmTrue) {
-    std::istringstream in("{\"t\":\"reply\",\"decision\":true}\n");
+    std::istringstream in("{\"t\":\"reply\",\"id\":1,\"decision\":true}\n");
     std::ostringstream out;
     GameState s = board9State();
     JsonDecisionProvider p(in, out, "B", 1);
@@ -256,7 +283,7 @@ TEST(JsonProtocol, ConfirmTrue) {
 }
 
 TEST(JsonProtocol, CollectSpeechReturnsTextAndBroadcasts) {
-    std::istringstream in("{\"t\":\"reply\",\"text\":\"我是预言家\"}\n");
+    std::istringstream in("{\"t\":\"reply\",\"id\":1,\"text\":\"我是预言家\"}\n");
     std::ostringstream out;
     GameState s = board9State();
     JsonDecisionProvider p(in, out, "B", 1);
@@ -279,7 +306,7 @@ TEST(JsonProtocol, InspectResultIsPrivateToSeer) {
 }
 
 TEST(JsonProtocol, WolfChatIsPrivateToWolvesNeverPublic) {
-    std::istringstream in("{\"t\":\"reply\",\"text\":\"今晚刀3号\"}\n");
+    std::istringstream in("{\"t\":\"reply\",\"id\":1,\"text\":\"今晚刀3号\"}\n");
     std::ostringstream out;
     GameState s = board9State();
     std::vector<int> openWolves;
@@ -322,9 +349,9 @@ TEST(JsonProtocol, WolfKillSecretVoteMajorityWins) {
     ASSERT_EQ(wolves.size(), 3u);  // board9: 3 open wolves
     const int A = town[0], B = town[1];
     std::ostringstream rep;  // votes (seat order): A, A, B -> A wins 2:1
-    rep << "{\"t\":\"reply\",\"choice\":" << A << "}\n"
-        << "{\"t\":\"reply\",\"choice\":" << A << "}\n"
-        << "{\"t\":\"reply\",\"choice\":" << B << "}\n";
+    rep << "{\"t\":\"reply\",\"id\":1,\"choice\":" << A << "}\n"
+        << "{\"t\":\"reply\",\"id\":2,\"choice\":" << A << "}\n"
+        << "{\"t\":\"reply\",\"id\":3,\"choice\":" << B << "}\n";
     std::istringstream in(rep.str());
     std::ostringstream out;
     JsonDecisionProvider p(in, out, "B", 1);
@@ -337,9 +364,9 @@ TEST(JsonProtocol, WolfKillTieMeansNoKill) {
     wolvesAndTown(s, wolves, town);
     const int A = town[0], B = town[1];
     std::ostringstream rep;  // A, B, 弃票 -> A:1 B:1 tie -> 空刀
-    rep << "{\"t\":\"reply\",\"choice\":" << A << "}\n"
-        << "{\"t\":\"reply\",\"choice\":" << B << "}\n"
-        << "{\"t\":\"reply\",\"choice\":null}\n";
+    rep << "{\"t\":\"reply\",\"id\":1,\"choice\":" << A << "}\n"
+        << "{\"t\":\"reply\",\"id\":2,\"choice\":" << B << "}\n"
+        << "{\"t\":\"reply\",\"id\":3,\"choice\":null}\n";
     std::istringstream in(rep.str());
     std::ostringstream out;
     JsonDecisionProvider p(in, out, "B", 1);
@@ -349,7 +376,7 @@ TEST(JsonProtocol, WolfKillTieMeansNoKill) {
 // --- §11: votes / withdraw / self-destruct must not leak an individual choice ---
 
 TEST(JsonProtocol, ExileVoteDoesNotLeakIndividualBallot) {
-    std::istringstream in("{\"t\":\"reply\",\"choice\":2}\n");
+    std::istringstream in("{\"t\":\"reply\",\"id\":1,\"choice\":2}\n");
     std::ostringstream out;
     GameState s = board9State();
     JsonDecisionProvider p(in, out, "B", 1);
@@ -359,7 +386,7 @@ TEST(JsonProtocol, ExileVoteDoesNotLeakIndividualBallot) {
 }
 
 TEST(JsonProtocol, WithdrawDoesNotLeak) {
-    std::istringstream in("{\"t\":\"reply\",\"decision\":false}\n");
+    std::istringstream in("{\"t\":\"reply\",\"id\":1,\"decision\":false}\n");
     std::ostringstream out;
     GameState s = board9State();
     JsonDecisionProvider p(in, out, "B", 1);
@@ -368,7 +395,8 @@ TEST(JsonProtocol, WithdrawDoesNotLeak) {
 }
 
 TEST(JsonProtocol, SelfDestructDecisionsAreModeratorOnly) {
-    std::istringstream in("{\"t\":\"reply\",\"decision\":false}\n{\"t\":\"reply\",\"decision\":false}\n");
+    std::istringstream in("{\"t\":\"reply\",\"id\":1,\"decision\":false}\n"
+                          "{\"t\":\"reply\",\"id\":2,\"decision\":false}\n");
     std::ostringstream out;
     GameState s = board9State();
     JsonDecisionProvider p(in, out, "B", 1);

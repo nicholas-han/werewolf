@@ -175,7 +175,7 @@ int JsonDecisionProvider::wolfRepresentative(const GameState& state) const {
     return fallback;
 }
 
-jsonu::Value JsonDecisionProvider::readReply() {
+jsonu::Value JsonDecisionProvider::readReply(int expectedId) {
     timedOut_ = false;
     ensureReader();
 
@@ -202,8 +202,16 @@ jsonu::Value JsonDecisionProvider::readReply() {
             std::optional<jsonu::Value> v = jsonu::parse(line);
             if (v) {
                 const jsonu::Value* t = v->get("t");
-                if (t && t->isStr() && t->s == "reply") return *v;
-                // any other line type is ignored (the orchestrator only sends replies)
+                if (t && t->isStr() && t->s == "reply") {
+                    const jsonu::Value* id = v->get("id");
+                    if (id && id->isInt() && id->i == expectedId) return *v;
+                    // A reply can arrive after its ask timed out. Never let that
+                    // stale line answer the next player's ask; log it for the
+                    // god-script (timing forensics) and keep waiting.
+                    emitStaleReplyDiscarded(
+                        (id && id->isInt()) ? std::optional<long long>(id->i) : std::nullopt,
+                        expectedId);
+                }
             }
         }
         lk.lock();  // not a usable reply -> keep waiting, honoring the same deadline
@@ -252,6 +260,25 @@ void JsonDecisionProvider::emitTimeoutFallback(int seat, const char* kind) {
     sink_.emit(e);
 }
 
+void JsonDecisionProvider::emitStaleReplyDiscarded(std::optional<long long> staleId,
+                                                   int expectedId) {
+    jsonu::Obj d;
+    d.boolean("staleReply", true);
+    if (staleId) d.num("staleId", *staleId);
+    else d.null("staleId");
+    d.num("expectedId", expectedId);
+    Event e;
+    e.vis = Vis::Moderator;  // god-script only; never reaches a brain or player (no leak)
+    e.etype = "status";
+    e.dataJson = d.dump();
+    e.day = curDay_;
+    e.phase = curPhase_;
+    e.text = std::string("【上帝】丢弃过期回复（reply id=") +
+             (staleId ? std::to_string(*staleId) : std::string("无")) + "，当前 ask id=" +
+             std::to_string(expectedId) + "）";
+    sink_.emit(e);
+}
+
 std::optional<int> JsonDecisionProvider::askChoose(const GameState& s, int seat, AskKind kind,
                                                    const std::string& prompt,
                                                    const std::vector<int>& candidates,
@@ -282,7 +309,7 @@ std::optional<int> JsonDecisionProvider::askChoose(const GameState& s, int seat,
         .raw("candidates", candidatesArray(s, candidates)).boolean("allowSkip", allowSkip);
     writeLine(a.dump());
 
-    jsonu::Value r = readReply();
+    jsonu::Value r = readReply(id);
     if (timedOut_) emitTimeoutFallback(seat, askKindName(kind));
     std::optional<int> result;
     const jsonu::Value* c = r.get("choice");
@@ -312,7 +339,7 @@ bool JsonDecisionProvider::askConfirm(const GameState& s, int seat, AskKind kind
         .num("day", curDay_).str("phase", curPhase_);
     writeLine(a.dump());
 
-    jsonu::Value r = readReply();
+    jsonu::Value r = readReply(id);
     if (timedOut_) emitTimeoutFallback(seat, askKindName(kind));
     const jsonu::Value* d = r.get("decision");
     const bool decision = (d && d->isBool()) ? d->b : false;  // default false (conservative)
@@ -342,7 +369,7 @@ std::string JsonDecisionProvider::askSpeak(const GameState& s, int seat, SpeechK
         .num("day", curDay_).str("phase", curPhase_);
     writeLine(a.dump());
 
-    jsonu::Value r = readReply();
+    jsonu::Value r = readReply(id);
     if (timedOut_) emitTimeoutFallback(seat, speechKindName(sk));
     const jsonu::Value* tv = r.get("text");
     return (tv && tv->isStr()) ? tv->s : std::string();

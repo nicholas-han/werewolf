@@ -100,7 +100,7 @@ private:
 
     void writeLine(const std::string& s);
     void ensureReader();        // lazily spawn the background stdin reader
-    jsonu::Value readReply();   // blocks up to askTimeout_; Null = no usable reply
+    jsonu::Value readReply(int expectedId);  // ignores stale/mismatched replies; Null on timeout/EOF
     void sync(const GameState& s);
 
     std::string nameOf(const GameState&, int id) const;
@@ -118,6 +118,10 @@ private:
     // Moderator-only note that `kind` for `seat` fell back due to a reply timeout
     // (§8). Emitted alongside the normal fallback so the god-script records why.
     void emitTimeoutFallback(int seat, const char* kind);
+    // Moderator-only note that a reply with the wrong/missing id was discarded
+    // (§8) — usually one arriving after its ask already timed out. staleId is
+    // nullopt when the reply carried no usable id.
+    void emitStaleReplyDiscarded(std::optional<long long> staleId, int expectedId);
 };
 
 }  // namespace ww
