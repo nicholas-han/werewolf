@@ -13,12 +13,23 @@ backend, and the records. Design: [../docs/ai_agents_design.md](../docs/ai_agent
 cmake -B build && cmake --build build      # 产出 build/werewolf
 ```
 
-**默认用云端 DeepSeek**（需 `DEEPSEEK_API_KEY`，见下「云端大模型」）：
+**一次性设置**（之后每次直接 `python3 -m orchestrator` 即开局）：
 
 ```bash
-export DEEPSEEK_API_KEY=sk-xxxx                    # 先设好 key（绝不写进代码/配置）
+cp .env.example .env                       # 填 API key（git-ignore，绝不提交）
+cp werewolf.toml.example werewolf.toml     # 填偏好：provider/model/板子/座位/超时/人设…
+python3 -m orchestrator                    # 开局
+```
+
+启动配置一条优先级链：**CLI 参数 > `werewolf.toml` > 启动交互问答 > 内置默认**。
+`.env` 自动载入（终端里已 `export` 的同名变量优先）；不建这两个文件也行——缺什么
+启动时交互选什么（后端/模型/板子/座位都有选单，后端选单会标注各家 key 是否已设置），
+或者全用 CLI 参数：
+
+```bash
 python3 -m orchestrator --human-seat 1            # 默认 provider=deepseek、model=deepseek-v4-flash
 python3 -m orchestrator --model deepseek-v4-pro   # 更强的模型
+python3 -m orchestrator --human-seat 0            # 0 = 纯 AI 观战
 python3 -m orchestrator --fake                    # 确定性假模型，秒级（管线/调试，无需 key）
 ```
 
@@ -31,14 +42,18 @@ python3 -m orchestrator --provider ollama --model deepseek-r1:1.5b
 
 > 本地真模型整局**较慢**（14b 约 17–35s/决策）；云端快很多；快速验证用 `--fake`。
 
+超时有两个，名字区分开：`--llm-timeout` 是单次模型调用软超时（默认 本地 600s /
+云端 60s；旧名 `--timeout` 兼容保留），`--ask-timeout` 是引擎等待每个 reply 的软超时
+（默认 600s，protocol §8，`<=0` 关闭）。
+
 ### 云端大模型（API key，M16）
 
-API key **只走环境变量**（绝不写进代码/配置/提交）。先 `export`，再（默认即 deepseek，其它家用 `--provider`）：
+API key **只走环境变量或 `.env`**（配置文件只记「去哪个环境变量取 key」，绝不写 key 本身）：
 
 ```bash
+# 推荐：写进 .env（见 .env.example）；或临时 export：
 export DEEPSEEK_API_KEY=sk-xxxx                                      # DeepSeek（默认）
 python3 -m orchestrator --human-seat 1                              # 默认 deepseek-v4-flash
-python3 -m orchestrator --model deepseek-v4-pro                     # 更强
 
 export DASHSCOPE_API_KEY=sk-xxxx                                    # 阿里百炼（DashScope）
 python3 -m orchestrator --provider bailian --model qwen-max        # 换厂商只改 --provider
@@ -64,7 +79,7 @@ python3 -m orchestrator --provider openai-compat \
 ```
 
 要点：
-- 默认每次模型调用软超时 **云端 60s / 本地 600s**（`--timeout` 覆盖）；429/5xx/网络错带退避重试，最终失败回退合法默认，**绝不卡死游戏**。
+- 默认每次模型调用软超时 **云端 60s / 本地 600s**（`--llm-timeout` 覆盖）；429/5xx/网络错带退避重试，最终失败回退合法默认，**绝不卡死游戏**。
 - 推理模型（DeepSeek thinking 模式 / 百炼 `deepseek-r1`…）的思维链在独立字段 `reasoning_content` 返回，已被包回 `<think>` 供 `AgentBrain` 切分——**绝不会漏进公开发言**（§11）。
 - 暂不支持**仅流式**的模型（百炼 QwQ 系 `qwq-*`）与 OpenAI **o 系**（`o4-mini` 等需 `max_completion_tokens`/不收 `temperature`）——本客户端发非流式、统一 `temperature`+`max_tokens`，这两类会被拒（HTTP 400 → 回退合法默认）；故未在下拉菜单列出，待后续按模型族适配 / 实现 SSE 流式后再开。
 - 结构化输出默认靠提示词约定 + 宽松解析 + 合法回退；弱模型可加 `--json-object`（仅对 choose/confirm 下发 `response_format=json_object`，speak 不强制）。
@@ -93,6 +108,7 @@ python3 orchestrator/tests/test_e2e.py     # 整局跑通 + 两份记录 + §11 
 | `brain.py` | `AgentBrain`：累积 view、构造 prompt、解析/校验/回退、剥离 `<think>` |
 | `recorder.py` | `Recorder`：写 `god_script.md` + `trace.jsonl` |
 | `runner.py` | `Config` / `HumanTerminal` / `Orchestrator` 主循环 + 座位路由 |
+| `config.py` | 启动配置：`.env` 自动载入 + `werewolf.toml` 偏好（CLI > toml > 交互 > 默认） |
 | `__main__.py` | CLI 入口 |
 
 ## 本地模型（已接通）

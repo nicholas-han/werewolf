@@ -1,0 +1,32 @@
+# 启动偏好（cp werewolf.toml.example werewolf.toml 后按需修改；已 git-ignore）。
+# 优先级：CLI 参数 > 本文件 > 启动交互问答 > 内置默认。
+# 所有项都可省略——省略的项走交互问答或默认值。
+# 安全：本文件只记「去哪个环境变量取 key」（api_key_env），绝不写 key 本身；
+#       key 放 .env（见 .env.example）。
+
+[game]
+board = 1            # 1) 9人预女猎  2) 12人预女猎守+狼枪  3) 12人通灵机械狼
+human_seat = 1       # 你的座位号；0 = 纯 AI 观战
+# seed = 12345
+# wolf_chat_rounds = 2   # 狼队夜聊最大轮数（整轮全过则提前结束）
+# interrupts = false     # 逐发言中断（自爆/退水机会；最忠实但慢）
+# ask_timeout = 600      # 引擎等待每个 reply 的软超时（秒，<=0 关闭）
+
+[llm]
+provider = "deepseek"  # deepseek/bailian/openai/moonshot/zhipu/anthropic/openai-compat/ollama/fake
+# model = "deepseek-v4-flash"   # 省略 = 厂商默认（Ollama 则启动下拉选择）
+# timeout = 60                  # 单次模型调用软超时（秒）；默认 本地 600 / 云端 60
+# knowledge = "auto"            # 领域知识注入：auto/full/lite/off（issue #20）
+# json_object = false           # 对 choose/confirm 下发 response_format=json_object
+# ollama_host = "http://localhost:11434"
+# base_url = ""                 # 覆盖厂商 base_url（openai-compat 必填）
+# api_key_env = ""              # 覆盖装 key 的环境变量名（默认随厂商）
+
+# [paths]
+# engine = "build/werewolf"
+# out_dir = "games"
+
+# 每座位 AI 人设（可选；键为座位号）
+# [personas]
+# 1 = "谨慎的逻辑流玩家，发言简短、只谈事实。"
+# 2 = "激进带节奏，喜欢首验查杀。"

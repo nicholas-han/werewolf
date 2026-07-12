@@ -81,3 +81,7 @@ __pycache__/
 
 # Generated game records (god_script.md / trace.jsonl)
 games/
+
+# Personal launch config (templates: .env.example / werewolf.toml.example)
+.env
+werewolf.toml
