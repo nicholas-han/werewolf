@@ -1,37 +1,39 @@
 """CLI: run one game.
 
-**默认用云端 DeepSeek**（API key，M16）——本地推理模型太慢时的提速路径：
+启动配置一条优先级链（见 orchestrator/config.py）：
 
-    export DEEPSEEK_API_KEY=sk-xxxx              # 先把 key 放进环境变量（绝不写进代码/配置）
-    python -m orchestrator --human-seat 1                       # 默认 deepseek-v4-flash，你坐 1 号
-    python -m orchestrator --model deepseek-v4-pro             # 更强的模型
+    CLI 参数  >  werewolf.toml  >  启动交互问答  >  内置默认
+
+**首次设置**（一次性，之后每次直接 `python -m orchestrator` 即开）：
+
+    cp .env.example .env                  # 填入 API key（git-ignore，绝不提交）
+    cp werewolf.toml.example werewolf.toml   # 填入偏好（provider/model/板子/座位…）
+
+不建配置文件也行——缺什么启动时交互选什么（后端/模型/板子/座位都有选单），
+或者全用 CLI 参数：
+
+    python -m orchestrator --human-seat 1                      # 默认 deepseek-v4-flash
+    python -m orchestrator --provider bailian --model qwen-max # 换厂商
+    python -m orchestrator --provider ollama --human-seat 1    # 本地 Ollama（须先 ollama serve）
     python -m orchestrator --fake                              # 确定性假模型，秒级（无需 key）
-
-换其它厂商只改 --provider（key 各走自己的环境变量）：
-
-    export DASHSCOPE_API_KEY=sk-xxxx
-    python -m orchestrator --provider bailian --model qwen-max            # 阿里百炼
-    python -m orchestrator --provider openai-compat \\
-        --base-url https://your-endpoint/v1 --api-key-env MY_KEY --model foo   # 任意兼容端点
-
-本地 Ollama（须先 ollama serve）：
-
-    python -m orchestrator --provider ollama --human-seat 1    # 启动时下拉选本地模型
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import urllib.request
 
 from orchestrator.cloud import (GENERIC_PROVIDER, PROVIDER_PRESETS, build_client,
                                 provider_choices)
+from orchestrator.config import load_config, load_dotenv
 from orchestrator.llm import OllamaClient
 from orchestrator.runner import Config, run_game
 
 _DEFAULT_MODEL = "deepseek-r1:14b"
+_DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 _BOARDS = {
     1: ("9 人 预女猎", 9),
     2: ("12 人 预女猎守 + 狼枪", 12),
@@ -55,6 +57,43 @@ def pick_board() -> int:
     except ValueError:
         pass
     return 1
+
+
+def pick_provider() -> str:
+    """Interactive backend menu; cloud entries show whether their key env is set."""
+    ordered: list[str] = []
+    seen = set()
+    for name in ["deepseek"] + list(PROVIDER_PRESETS):
+        preset = PROVIDER_PRESETS[name]
+        if id(preset) in seen:  # skip aliases (bailian/dashscope share one preset)
+            continue
+        seen.add(id(preset))
+        ordered.append(name)
+    ordered += [GENERIC_PROVIDER, "ollama", "fake"]
+
+    print("选择 AI 后端：")
+    for i, name in enumerate(ordered, 1):
+        preset = PROVIDER_PRESETS.get(name)
+        if preset is not None:
+            key_state = "已设置" if os.environ.get(preset.api_key_env, "").strip() else "未设置"
+            print(f"  {i}) {preset.label}　[key: {preset.api_key_env} {key_state}]")
+        elif name == GENERIC_PROVIDER:
+            print(f"  {i}) 任意 OpenAI 兼容端点（需 --base-url / --api-key-env）")
+        elif name == "ollama":
+            print(f"  {i}) Ollama（本地，须先 ollama serve）")
+        else:
+            print(f"  {i}) fake（确定性假模型，测试/管线用，无需 key）")
+    try:
+        s = input(f"后端编号 [默认 1 = {ordered[0]}]> ").strip()
+    except EOFError:
+        s = ""
+    try:
+        idx = int(s)
+        if 1 <= idx <= len(ordered):
+            return ordered[idx - 1]
+    except ValueError:
+        pass
+    return ordered[0]
 
 
 def pick_human_seat(board: int) -> int | None:
@@ -140,66 +179,129 @@ def pick_cloud_model(provider: str) -> str | None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Werewolf AI-agent orchestrator (M15/M16).")
-    ap.add_argument("--board", type=int, default=None, choices=[1, 2, 3], help="省略=启动时选择")
-    ap.add_argument("--seed", type=int, default=12345)
-    ap.add_argument("--human-seat", type=int, default=None, help="座位号；省略=启动时选择")
-    ap.add_argument("--provider", default="deepseek",
+    ap.add_argument("--config", default=None,
+                    help="werewolf.toml 路径（默认仓库根；所有配置项可被 CLI 参数覆盖）")
+    ap.add_argument("--board", type=int, default=None, choices=[1, 2, 3],
+                    help="省略=配置文件/启动时选择")
+    ap.add_argument("--seed", type=int, default=None, help="默认 12345")
+    ap.add_argument("--human-seat", type=int, default=None,
+                    help="座位号；0=纯 AI 观战；省略=配置文件/启动时选择")
+    ap.add_argument("--provider", default=None,
                     choices=list(_LOCAL_PROVIDERS) + provider_choices(),
                     help="默认 deepseek(云端,需 DEEPSEEK_API_KEY)；ollama=本地；fake=假模型；"
-                         "其余云端见 bailian/openai/moonshot/zhipu/anthropic/openai-compat")
+                         "其余云端见 bailian/openai/moonshot/zhipu/anthropic/openai-compat；"
+                         "省略且无配置时启动选单")
     ap.add_argument("--model", default=None,
                     help="模型名；省略 → Ollama 启动下拉 / 云端用该厂商默认模型")
-    ap.add_argument("--ollama-host", default="http://localhost:11434")
+    ap.add_argument("--ollama-host", default=None, help=f"默认 {_DEFAULT_OLLAMA_HOST}")
     ap.add_argument("--base-url", default=None,
                     help="云端：覆盖该厂商 base_url（provider=openai-compat 时必填）")
     ap.add_argument("--api-key-env", default=None,
                     help="云端：装 API key 的环境变量名（默认随厂商，如百炼=DASHSCOPE_API_KEY）")
-    ap.add_argument("--json-object", action="store_true",
+    ap.add_argument("--json-object", action=argparse.BooleanOptionalAction, default=None,
                     help="云端：对 choose/confirm 下发 response_format=json_object（加强结构化）")
-    ap.add_argument("--timeout", type=int, default=None,
+    ap.add_argument("--llm-timeout", type=int, default=None,
                     help="单次模型调用软超时（秒）；默认 本地 600 / 云端 60")
-    ap.add_argument("--knowledge", default="auto", choices=["auto", "full", "lite", "off"],
+    ap.add_argument("--timeout", type=int, default=None,
+                    help="（已改名 --llm-timeout，兼容保留）")
+    ap.add_argument("--ask-timeout", type=int, default=None,
+                    help="引擎等待每个 reply 的软超时（秒，<=0 关闭；默认 600，protocol §8）")
+    ap.add_argument("--knowledge", default=None, choices=["auto", "full", "lite", "off"],
                     help="领域知识注入（issue #20）：auto=云端 full、本地 ollama 及 8k 小上下文"
                          "模型 lite（默认）；full=按角色/板子全量（约 12–15k 字符，适合云端大"
                          "上下文）；lite=精简；off=关")
-    ap.add_argument("--wolf-chat-rounds", type=int, default=2, help="狼队夜聊最大轮数（默认2，整轮全过则提前结束）")
-    ap.add_argument("--interrupts", action="store_true", help="逐发言中断：每位发言后给自爆/退水机会（最忠实但慢；默认关）")
+    ap.add_argument("--wolf-chat-rounds", type=int, default=None,
+                    help="狼队夜聊最大轮数（默认2，整轮全过则提前结束）")
+    ap.add_argument("--interrupts", action=argparse.BooleanOptionalAction, default=None,
+                    help="逐发言中断：每位发言后给自爆/退水机会（最忠实但慢；默认关）")
     ap.add_argument("--fake", action="store_true", help="等价于 --provider fake")
     ap.add_argument("--engine", default=None, help="werewolf 路径（默认 build/werewolf）")
     ap.add_argument("--out-dir", default=None, help="记录输出目录（默认 ./games）")
     args = ap.parse_args()
 
-    provider = "fake" if args.fake else args.provider
-    is_cloud = provider not in _LOCAL_PROVIDERS
+    # .env（API key）+ werewolf.toml（偏好）；真实环境变量 > .env，CLI > toml。
+    loaded_env, shadowed_env = load_dotenv()
+    conf = load_config(args.config)
+    sources = []
+    if loaded_env:
+        sources.append(f".env（{', '.join(loaded_env)}）")
+    if conf:
+        sources.append(args.config or "werewolf.toml")
+    if sources:
+        print(f"[orchestrator] 已加载 {' | '.join(sources)}", file=sys.stderr)
+    for name in shadowed_env:
+        print(f"[orchestrator] 注意：{name} 使用的是终端环境变量，忽略了 .env 中的不同值"
+              f"（如遇 401 请检查 shell 里是否残留旧 export）", file=sys.stderr)
+
+    def pick(cli_value, key: str, default=None):
+        return cli_value if cli_value is not None else conf.get(key, default)
+
     interactive = sys.stdin.isatty()  # only prompt in a real terminal
 
-    board = args.board if args.board is not None else (pick_board() if interactive else 1)
+    provider = "fake" if args.fake else pick(args.provider, "provider")
+    if provider is None:
+        provider = pick_provider() if interactive else "deepseek"
+    is_cloud = provider not in _LOCAL_PROVIDERS
+
+    board = pick(args.board, "board")
+    if board not in _BOARDS:
+        if board is not None:
+            print(f"[orchestrator] 配置里板子 {board} 无效（可选 1/2/3）", file=sys.stderr)
+        board = pick_board() if interactive else 1
+
+    ollama_host = pick(args.ollama_host, "ollama_host", _DEFAULT_OLLAMA_HOST)
 
     # 模型：ollama 走本地下拉/默认；云端用厂商默认（交互可下拉）；fake 无所谓。
-    model = args.model
+    model = pick(args.model, "model")
     if provider == "ollama" and model is None:
-        model = pick_model(args.ollama_host) if interactive else _DEFAULT_MODEL
+        model = pick_model(ollama_host) if interactive else _DEFAULT_MODEL
     elif is_cloud and model is None and interactive:
         model = pick_cloud_model(provider)  # None → build_client 用预设默认
 
-    human = args.human_seat
-    if human is None and interactive:
-        human = pick_human_seat(board)
+    # 座位：0 = 纯 AI 观战（配置文件里也用 0 表示，TOML 没有 null）。
+    if args.human_seat is not None:
+        human = args.human_seat or None
+    elif "human_seat" in conf:
+        human = conf["human_seat"] or None
+    else:
+        human = pick_human_seat(board) if interactive else None
 
-    timeout = args.timeout if args.timeout is not None else (600 if provider == "ollama" else 60)
+    llm_timeout = args.llm_timeout
+    if llm_timeout is None and args.timeout is not None:
+        print("[orchestrator] --timeout 已改名 --llm-timeout（本次仍生效）", file=sys.stderr)
+        llm_timeout = args.timeout
+    if llm_timeout is None:
+        llm_timeout = conf.get("timeout")
+    if llm_timeout is None:
+        llm_timeout = 600 if provider == "ollama" else 60
+
+    knowledge = pick(args.knowledge, "knowledge", "auto")
+    if knowledge not in ("auto", "full", "lite", "off"):  # toml 值不经 argparse choices
+        print(f"[orchestrator] 配置里 knowledge={knowledge!r} 无效"
+              "（可选 auto/full/lite/off），按 auto 处理", file=sys.stderr)
+        knowledge = "auto"
 
     kw: dict = {
-        "board": board, "seed": args.seed, "human_seat": human,
-        "provider": provider, "model": model, "ollama_host": args.ollama_host,
-        "base_url": args.base_url, "api_key_env": args.api_key_env,
-        "json_object": args.json_object, "request_timeout": timeout,
-        "knowledge": args.knowledge,
-        "wolf_chat_rounds": args.wolf_chat_rounds, "interrupts": args.interrupts,
+        "board": board, "seed": pick(args.seed, "seed", 12345), "human_seat": human,
+        "provider": provider, "model": model, "ollama_host": ollama_host,
+        "base_url": pick(args.base_url, "base_url"),
+        "api_key_env": pick(args.api_key_env, "api_key_env"),
+        "json_object": bool(pick(args.json_object, "json_object", False)),
+        "request_timeout": llm_timeout,
+        "ask_timeout": pick(args.ask_timeout, "ask_timeout", 600),
+        "knowledge": knowledge,
+        "wolf_chat_rounds": pick(args.wolf_chat_rounds, "wolf_chat_rounds", 2),
+        "interrupts": bool(pick(args.interrupts, "interrupts", False)),
     }
-    if args.engine:
-        kw["engine_path"] = args.engine
-    if args.out_dir:
-        kw["out_dir"] = args.out_dir
+    engine = pick(args.engine, "engine")
+    if engine:
+        kw["engine_path"] = engine
+    out_dir = pick(args.out_dir, "out_dir")
+    if out_dir:
+        kw["out_dir"] = out_dir
+    personas = conf.get("personas")
+    if personas:
+        kw["personas"] = personas
     cfg = Config(**kw)
 
     if cfg.provider == "ollama":
