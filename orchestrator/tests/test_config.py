@@ -24,14 +24,14 @@ class DotenvTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
 
-    def _load(self, content: str) -> list[str]:
+    def _load(self, content: str) -> tuple[list[str], list[str]]:
         return load_dotenv(_write(self.tmp.name, ".env", content))
 
     def test_loads_keys_with_export_comments_and_quotes(self):
         for k in ("WW_TEST_A", "WW_TEST_B", "WW_TEST_C"):
             os.environ.pop(k, None)
             self.addCleanup(os.environ.pop, k, None)
-        loaded = self._load(
+        loaded, shadowed = self._load(
             "# comment\n"
             "WW_TEST_A=plain\n"
             "export WW_TEST_B='quoted value'\n"
@@ -40,19 +40,28 @@ class DotenvTest(unittest.TestCase):
             "NOT_AN_ASSIGNMENT\n"
         )
         self.assertEqual(loaded, ["WW_TEST_A", "WW_TEST_B", "WW_TEST_C"])
+        self.assertEqual(shadowed, [])
         self.assertEqual(os.environ["WW_TEST_A"], "plain")
         self.assertEqual(os.environ["WW_TEST_B"], "quoted value")
         self.assertEqual(os.environ["WW_TEST_C"], "spaced")
 
-    def test_real_environment_wins(self):
+    def test_real_environment_wins_and_is_reported_as_shadowing(self):
         os.environ["WW_TEST_KEEP"] = "from-shell"
         self.addCleanup(os.environ.pop, "WW_TEST_KEEP", None)
-        loaded = self._load("WW_TEST_KEEP=from-dotenv\n")
+        loaded, shadowed = self._load("WW_TEST_KEEP=from-dotenv\n")
         self.assertEqual(loaded, [])
+        self.assertEqual(shadowed, ["WW_TEST_KEEP"])  # 值不同 → 点名提示
         self.assertEqual(os.environ["WW_TEST_KEEP"], "from-shell")
 
+    def test_identical_value_is_not_shadowing(self):
+        os.environ["WW_TEST_SAME"] = "same"
+        self.addCleanup(os.environ.pop, "WW_TEST_SAME", None)
+        loaded, shadowed = self._load("WW_TEST_SAME=same\n")
+        self.assertEqual(loaded, [])
+        self.assertEqual(shadowed, [])  # 值一致不是问题，不制造噪音
+
     def test_missing_file_is_quietly_empty(self):
-        self.assertEqual(load_dotenv(pathlib.Path(self.tmp.name) / "absent"), [])
+        self.assertEqual(load_dotenv(pathlib.Path(self.tmp.name) / "absent"), ([], []))
 
 
 class TomlConfigTest(unittest.TestCase):

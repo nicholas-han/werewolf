@@ -25,16 +25,23 @@ DOTENV_PATH = _REPO_ROOT / ".env"
 CONFIG_PATH = _REPO_ROOT / "werewolf.toml"
 
 
-def load_dotenv(path: pathlib.Path | None = None) -> list[str]:
-    """Load KEY=VALUE lines from `.env` into os.environ; returns the names loaded.
+def load_dotenv(path: pathlib.Path | None = None) -> tuple[list[str], list[str]]:
+    """Load KEY=VALUE lines from `.env` into os.environ.
 
-    真实环境变量优先（已存在的名字不覆盖）。支持 `export KEY=...` 前缀、`#` 注释、
-    引号包裹的值。文件不存在则安静返回空表（.env 是可选的）。
+    Returns `(loaded, shadowed)`: names taken from .env, and names whose .env
+    value was IGNORED because the real environment already holds a *different*
+    value（真实环境变量优先）。shadowed 用于启动提示——shell 里残留的旧
+    export 会静默压过 .env 里的新 key，401 排查起来非常绕，必须点名。
+    值相同的不算 shadowed（不是问题，提示只会变成噪音）。
+
+    支持 `export KEY=...` 前缀、`#` 注释、引号包裹的值。文件不存在则安静返回
+    空表（.env 是可选的）。
     """
     p = path if path is not None else DOTENV_PATH
     loaded: list[str] = []
+    shadowed: list[str] = []
     if not p.is_file():
-        return loaded
+        return loaded, shadowed
     for raw in p.read_text(encoding="utf-8").splitlines():
         line = raw.strip()
         if not line or line.startswith("#"):
@@ -50,7 +57,9 @@ def load_dotenv(path: pathlib.Path | None = None) -> list[str]:
         if key not in os.environ:
             os.environ[key] = val
             loaded.append(key)
-    return loaded
+        elif val and os.environ[key] != val:
+            shadowed.append(key)
+    return loaded, shadowed
 
 
 # werewolf.toml 的合法键（分节镜像 CLI 参数）。值是期望类型；bool 必须精确匹配

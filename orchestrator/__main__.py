@@ -220,7 +220,7 @@ def main() -> None:
     args = ap.parse_args()
 
     # .env（API key）+ werewolf.toml（偏好）；真实环境变量 > .env，CLI > toml。
-    loaded_env = load_dotenv()
+    loaded_env, shadowed_env = load_dotenv()
     conf = load_config(args.config)
     sources = []
     if loaded_env:
@@ -229,6 +229,9 @@ def main() -> None:
         sources.append(args.config or "werewolf.toml")
     if sources:
         print(f"[orchestrator] 已加载 {' | '.join(sources)}", file=sys.stderr)
+    for name in shadowed_env:
+        print(f"[orchestrator] 注意：{name} 使用的是终端环境变量，忽略了 .env 中的不同值"
+              f"（如遇 401 请检查 shell 里是否残留旧 export）", file=sys.stderr)
 
     def pick(cli_value, key: str, default=None):
         return cli_value if cli_value is not None else conf.get(key, default)
