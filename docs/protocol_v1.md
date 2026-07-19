@@ -200,8 +200,10 @@ speak 的 `kind`（`SpeechKind`）：`Statement`（白天发言；竞选发言�
 ```jsonc
 { "kind":"Inspect",  "target":5, "isWolf":false }                 // 预言家查验
 { "kind":"Psychic",  "target":5, "shownRole":"Witch" }            // 通灵（机械狼按伪装）
-{ "kind":"GunCheck", "canShoot":true }                            // 猎人每晚验枪
+{ "kind":"GunCheck", "canShoot":true }                            // 猎人每晚验枪；机械狼学得猎人后同样每晚收到（seat=机械狼，学习当晚恒 false——开枪自次日白天起持有）
 { "kind":"Learn",    "target":5, "learnedRole":"Guardian" }       // 机械狼学习结果
+{ "kind":"Learn",    "target":6, "learnedRole":"Witch",
+  "antidote":true, "poison":false }                               // 学女巫附药水副本（学习当刻剩余；仅 learnedRole=Witch 时有这两个字段）
 { "kind":"Knifed" }                                               // 女巫「你今晚被刀」（解药未用时）
 ```
 
@@ -283,6 +285,6 @@ speak 的 `kind`（`SpeechKind`）：`Statement`（白天发言；竞选发言�
 
 ## 11. 实现备注
 
-- **引擎侧**：`text` 一律用 `core/messages.h`（中文文案单一来源）渲染后塞进事件；`data` 给机器字段。三个信息出口 `notify/notifyPlayer/notifyModerator` + 定向结果 `onInspectResult/onPsychicResult/onHunterGunCheck/onMechanicLearnResult` → 对应 `public/private` 事件；秘密决策在拿到 `reply` 后补发 `moderator` 的 `decision` 事件。
+- **引擎侧**：`text` 一律用 `core/messages.h`（中文文案单一来源）渲染后塞进事件；`data` 给机器字段。三个信息出口 `notify/notifyPlayer/notifyModerator` + 定向结果 `onInspectResult/onPsychicResult/onHunterGunCheck/onMechanicGunCheck/onMechanicLearnResult` → 对应 `public/private` 事件；秘密决策在拿到 `reply` 后补发 `moderator` 的 `decision` 事件。
 - **orchestrator 侧**：单点消费引擎 stdout；`event` 按 `vis` 派发（public→全 brain；private→对应 brain；moderator→仅 script）；`ask` 路由到该座位的 HumanTerminal/AgentBrain，回 `reply`。每个 brain 的 view 即「public ∪ 自己 private」，全程累积。
 - **协议测试（引擎）**：用内存 in/out 流喂预设 `reply` 行、捕获 `ask`/`event` 行，断言序列与字段，跑完整局（与现有 `ScriptedDecisionProvider` 测试同构）。

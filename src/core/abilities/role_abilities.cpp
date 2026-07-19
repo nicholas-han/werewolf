@@ -137,18 +137,23 @@ void MechanicLearn::actAtNight(NightContext& /*ctx*/, GameState& state, Player& 
     if (t == nullptr) return;
     state.mechanicLearned = t->role().kind();  // disguise takes effect immediately
     state.mechanicLearnDay = state.day;        // active abilities start the next night
-    provider.onMechanicLearnResult(owner.id(), *target, *state.mechanicLearned);  // private (§11)
 
     // Witch: copy the witch's *current* remaining potions (BRD §2 — she acts first,
     // so anything already spent tonight is gone). Independent of the real witch.
+    // The copied stock rides along with the learn result: the player cannot infer
+    // it from the flow (the moderator's asks must not vary with hidden state, §11).
+    std::optional<MechanicWitchStock> stock;
     if (state.mechanicLearned == RoleKind::Witch) {
         state.mechanicAntidoteAvailable = state.witchAntidoteAvailable;
         state.mechanicPoisonAvailable = state.witchPoisonAvailable;
+        stock = MechanicWitchStock{state.mechanicAntidoteAvailable,
+                                   state.mechanicPoisonAvailable};
     }
     // Any wolf role grants the one-shot 破盾大刀 (usable once it becomes lone, §2).
     if (t->faction() == Faction::Wolf) {
         state.mechanicBigKnifeAvailable = true;
     }
+    provider.onMechanicLearnResult(owner.id(), *target, *state.mechanicLearned, stock);  // §11
 }
 
 void MechanicLoneKill::actAtNight(NightContext& ctx, GameState& state, Player& owner,
@@ -226,9 +231,36 @@ void MechanicLearnedProtect::actAtNight(NightContext& ctx, GameState& state, Pla
     state.mechanicLastGuardedId = target;
 }
 
+void MechanicLearnedGunCheck::actAtNight(NightContext& ctx, GameState& state, Player& owner,
+                                         DecisionProvider& provider) {
+    if (state.mechanicLearned != RoleKind::Hunter || !state.mechanicLearnDay) return;
+    bool canShoot;
+    if (state.day == *state.mechanicLearnDay) {
+        // Learning night: any death tonight precedes the shot going live (§2
+        // 生效时机 — live from the next day), poison included.
+        canShoot = false;
+    } else {
+        // Runs after the real witch (30), so tonight's poison is known. She is
+        // the only possible poisoner here: the mech-witch is this very player
+        // and requires a different learned role.
+        const bool poisonedTonight = ctx.poisonTarget && *ctx.poisonTarget == owner.id();
+        canShoot = !poisonBlocksShot_ || !poisonedTonight;
+    }
+    provider.onMechanicGunCheck(owner.id(), canShoot);
+}
+
 void MechanicLearnedShoot::onDeath(GameState& state, Player& owner, DecisionProvider& provider,
                                    std::vector<PendingDeath>& out) {
-    if (state.mechanicLearned != RoleKind::Hunter || !state.mechanicAbilitiesActive()) return;
+    if (state.mechanicLearned != RoleKind::Hunter) return;
+    // §2 生效时机: the learned shot is live from the DAY after the learning night,
+    // judged by the death STAMP, not the announcement moment — a night death keeps
+    // its (day, Night) stamp even when announced the next morning (§5.2/§7.2). So
+    // a death during the learning night itself never shoots, while an exile (or
+    // self-destruct) the very next day reaches the normal blocked-cause check.
+    if (state.mechanicLearnDay && owner.deathDay() == *state.mechanicLearnDay &&
+        owner.deathPhase() == Phase::Night) {
+        return;
+    }
     // A blocked death cause forbids the shot (§2, board-configurable: 毒 + 自爆).
     for (DeathCause c : blocked_) {
         if (owner.hasDeathCause(c)) return;

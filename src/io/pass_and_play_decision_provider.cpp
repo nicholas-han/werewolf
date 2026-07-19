@@ -148,10 +148,16 @@ void PassAndPlayDecisionProvider::onHunterGunCheck(int hunterId, bool canShoot) 
     ConsoleDecisionProvider::onHunterGunCheck(hunterId, canShoot);
 }
 
-void PassAndPlayDecisionProvider::onMechanicLearnResult(int mechanicId, int targetId,
-                                                        RoleKind learnedRole) {
+void PassAndPlayDecisionProvider::onMechanicGunCheck(int mechanicId, bool canShoot) {
     ensureTurn("玩家 P" + std::to_string(mechanicId), mechanicId);
-    ConsoleDecisionProvider::onMechanicLearnResult(mechanicId, targetId, learnedRole);
+    ConsoleDecisionProvider::onMechanicGunCheck(mechanicId, canShoot);
+}
+
+void PassAndPlayDecisionProvider::onMechanicLearnResult(int mechanicId, int targetId,
+                                                        RoleKind learnedRole,
+                                                        const std::optional<MechanicWitchStock>& stock) {
+    ensureTurn("玩家 P" + std::to_string(mechanicId), mechanicId);
+    ConsoleDecisionProvider::onMechanicLearnResult(mechanicId, targetId, learnedRole, stock);
 }
 
 // --- public output ---

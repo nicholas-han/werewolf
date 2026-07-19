@@ -159,8 +159,33 @@ private:
     bool allowConsecutive_;
 };
 
+// Learned 猎人: nightly private gun-status gesture (§2 每晚验枪, mechanic flavor).
+// Runs inside the mechanic's own night block right after MechanicLearn, so the
+// learning night itself gets an immediate status — always 不可开枪 that night
+// (the learned shot is live from the next DAY, §2 生效时机). Later nights mirror
+// the real hunter's poison rule; only the real witch's poison can apply (the
+// mech-witch/mech-guard would require a different learned role).
+class MechanicLearnedGunCheck : public Ability, public NightActor {
+public:
+    // `poisonBlocksShot`: whether Poisoned is among learnedHunterShotBlockedBy —
+    // when the board lets a poisoned (mechanic) hunter shoot, the gesture is
+    // always 可开枪 past the learning night.
+    explicit MechanicLearnedGunCheck(bool poisonBlocksShot = true)
+        : poisonBlocksShot_(poisonBlocksShot) {}
+    std::string name() const override { return "MechanicLearnedGunCheck"; }
+    int nightOrder() const override { return 40; }  // mechanic block: after learn(38)
+    std::string nightCue() const override { return "机械狼"; }
+    void actAtNight(NightContext& ctx, GameState& state, Player& owner,
+                    DecisionProvider& provider) override;
+
+private:
+    bool poisonBlocksShot_;
+};
+
 // Learned 猎人: death-triggered shot. `blocked` lists the death causes that forbid
 // the shot (§2, board-configurable); defaults to 毒 + 自爆 (the mechanic is a wolf).
+// Live from the DAY after the learning night (§2 生效时机): a death stamped on the
+// learning night itself never shoots, an exile the very next day may.
 class MechanicLearnedShoot : public Ability, public DeathTrigger {
 public:
     explicit MechanicLearnedShoot(

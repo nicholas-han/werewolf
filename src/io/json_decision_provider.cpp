@@ -685,9 +685,28 @@ void JsonDecisionProvider::onHunterGunCheck(int hunterId, bool canShoot) {
     sink_.emit(e);
 }
 
-void JsonDecisionProvider::onMechanicLearnResult(int mechanicId, int targetId, RoleKind learnedRole) {
+void JsonDecisionProvider::onMechanicGunCheck(int mechanicId, bool canShoot) {
+    jsonu::Obj d;
+    d.str("kind", "GunCheck").boolean("canShoot", canShoot);
+    Event e;
+    e.vis = Vis::Private;
+    e.seat = mechanicId;
+    e.etype = "result_private";
+    e.dataJson = d.dump();
+    e.day = curDay_;
+    e.phase = curPhase_;
+    // No reason attached: 不可开枪 may be 学习当晚未生效 or 带毒 — the mechanic can tell.
+    e.text = std::string("【验枪】当前") + (canShoot ? "可开枪" : "不可开枪");
+    sink_.emit(e);
+}
+
+void JsonDecisionProvider::onMechanicLearnResult(int mechanicId, int targetId, RoleKind learnedRole,
+                                                 const std::optional<MechanicWitchStock>& stock) {
     jsonu::Obj d;
     d.str("kind", "Learn").num("target", targetId).str("learnedRole", std::string(to_string(learnedRole)));
+    if (stock) {
+        d.boolean("antidote", stock->antidote).boolean("poison", stock->poison);
+    }
     Event e;
     e.vis = Vis::Private;
     e.seat = mechanicId;
@@ -696,6 +715,10 @@ void JsonDecisionProvider::onMechanicLearnResult(int mechanicId, int targetId, R
     e.day = curDay_;
     e.phase = curPhase_;
     e.text = "【学习结果】你学习了 #" + std::to_string(targetId) + "，学到的身份是 " + txt::role(learnedRole);
+    if (stock) {
+        e.text += "（药水副本：解药×" + std::to_string(stock->antidote ? 1 : 0) + "、毒药×" +
+                  std::to_string(stock->poison ? 1 : 0) + "）";
+    }
     sink_.emit(e);
 }
 
