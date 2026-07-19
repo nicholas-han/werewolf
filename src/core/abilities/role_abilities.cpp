@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "core/game_state.h"
+#include "core/messages.h"
 #include "core/player.h"
 #include "io/decision_provider.h"
 
@@ -44,6 +45,10 @@ void Inspect::actAtNight(NightContext& /*ctx*/, GameState& state, Player& owner,
 
 void WitchPotions::actAtNight(NightContext& ctx, GameState& state, Player& owner,
                               DecisionProvider& provider) {
+    // Potion state AT ENTRY — the uniform-flow notices below must reflect what she
+    // had walking into the night, not what tonight's own spending left behind.
+    const bool hadAntidote = state.witchAntidoteAvailable;
+    const bool hadPoison = state.witchPoisonAvailable;
     bool savedThisNight = false;
 
     // Self-rescue policy (BRD §2). First board: Never.
@@ -83,6 +88,17 @@ void WitchPotions::actAtNight(NightContext& ctx, GameState& state, Player& owner
         trySave(*ctx.bigKnifeTarget);
     }
 
+    // §2/§11 uniform flow: with the antidote unused she is told the knife every
+    // night — a knife-less night must be an explicit "无人被刀", never silence, so
+    // the presence of this step depends only on her own potion state (which she
+    // knows), not on the hidden knife. A hidden 破盾大刀 target stays a "no knife"
+    // night on purpose (§2: she only ever learns the NORMAL knife).
+    const bool visibleKnife = ctx.wolfTarget.has_value() ||
+                              (!bigKnifePiercesAntidote_ && ctx.bigKnifeTarget.has_value());
+    if (hadAntidote && !visibleKnife) {
+        provider.notifyPlayer(owner.id(), txt::witchNoKnife());
+    }
+
     // Poison: blocked this night if she saved and the board forbids two potions
     // in one night (BRD §2, witchBothPotionsSameNight=false on first board).
     const bool poisonBlocked = savedThisNight && !bothPotionsSameNight_;
@@ -94,6 +110,13 @@ void WitchPotions::actAtNight(NightContext& ctx, GameState& state, Player& owner
             ctx.poisonSourceId = owner.id();
             state.witchPoisonAvailable = false;
         }
+    }
+
+    // §2/§11: with both potions gone she can neither learn nor do anything, but
+    // the moderator still walks her flow — one neutral touch per night, so the
+    // flow's shape (e.g. pass-and-play hand-offs) never encodes her potion state.
+    if (!hadAntidote && !hadPoison) {
+        provider.notifyPlayer(owner.id(), txt::witchNoPotionsLeft());
     }
 }
 
@@ -194,6 +217,9 @@ void MechanicLearnedInspect::actAtNight(NightContext& /*ctx*/, GameState& state,
 void MechanicLearnedWitch::actAtNight(NightContext& ctx, GameState& state, Player& owner,
                                       DecisionProvider& provider) {
     if (state.mechanicLearned != RoleKind::Witch || !state.mechanicAbilitiesActive()) return;
+    // Entry-state for the uniform-flow notices, mirroring WitchPotions (§2/§11).
+    const bool hadAntidote = state.mechanicAntidoteAvailable;
+    const bool hadPoison = state.mechanicPoisonAvailable;
     bool saved = false;
     if (state.mechanicAntidoteAvailable && ctx.wolfTarget.has_value()) {
         if (provider.chooseWitchSave(state, owner.id(), *ctx.wolfTarget)) {
@@ -201,6 +227,11 @@ void MechanicLearnedWitch::actAtNight(NightContext& ctx, GameState& state, Playe
             state.mechanicAntidoteAvailable = false;
             saved = true;
         }
+    }
+    // §2/§11 uniform flow (mirrors WitchPotions): antidote in hand + no knife ->
+    // explicit "无人被刀", never silence.
+    if (hadAntidote && !ctx.wolfTarget.has_value()) {
+        provider.notifyPlayer(owner.id(), txt::witchNoKnife());
     }
     const bool poisonBlocked = saved && !bothPotionsSameNight_;
     if (state.mechanicPoisonAvailable && !poisonBlocked) {
@@ -211,6 +242,11 @@ void MechanicLearnedWitch::actAtNight(NightContext& ctx, GameState& state, Playe
             ctx.mechPoisonSourceId = owner.id();
             state.mechanicPoisonAvailable = false;
         }
+    }
+    // §2/§11: both copied potions gone -> neutral nightly touch, same as the
+    // real witch, so the mechanic's night block never falls silent.
+    if (!hadAntidote && !hadPoison) {
+        provider.notifyPlayer(owner.id(), txt::witchNoPotionsLeft());
     }
 }
 
@@ -231,34 +267,61 @@ void MechanicLearnedProtect::actAtNight(NightContext& ctx, GameState& state, Pla
     state.mechanicLastGuardedId = target;
 }
 
-void MechanicLearnedGunCheck::actAtNight(NightContext& ctx, GameState& state, Player& owner,
-                                         DecisionProvider& provider) {
-    if (state.mechanicLearned != RoleKind::Hunter || !state.mechanicLearnDay) return;
-    bool canShoot;
-    if (state.day == *state.mechanicLearnDay) {
-        // Learning night: any death tonight precedes the shot going live (§2
-        // 生效时机 — live from the next day), poison included.
-        canShoot = false;
-    } else {
-        // Runs after the real witch (30), so tonight's poison is known. She is
-        // the only possible poisoner here: the mech-witch is this very player
-        // and requires a different learned role.
-        const bool poisonedTonight = ctx.poisonTarget && *ctx.poisonTarget == owner.id();
-        canShoot = !poisonBlocksShot_ || !poisonedTonight;
+void MechanicLearnedNightStatus::actAtNight(NightContext& ctx, GameState& state, Player& owner,
+                                            DecisionProvider& provider) {
+    if (!state.mechanicLearned || !state.mechanicLearnDay) return;
+    switch (*state.mechanicLearned) {
+        case RoleKind::Hunter: {
+            bool canShoot;
+            if (state.day == *state.mechanicLearnDay) {
+                // Learning night: any death tonight precedes the shot going live
+                // (§2 生效时机 — live from the next day), poison included.
+                canShoot = false;
+            } else {
+                // Runs after the real witch (30), so tonight's poison is known.
+                // She is the only possible poisoner here: the mech-witch is this
+                // very player and requires a different learned role.
+                const bool poisonedTonight =
+                    ctx.poisonTarget && *ctx.poisonTarget == owner.id();
+                canShoot = !poisonBlocksShot_ || !poisonedTonight;
+            }
+            provider.onMechanicGunCheck(owner.id(), canShoot);
+            return;
+        }
+        case RoleKind::Civilian:
+        case RoleKind::Werewolf:
+        case RoleKind::WolfGun: {
+            // No nightly learned ask exists for these — send a neutral touch so
+            // every learned role produces exactly one private interaction per
+            // night and the flow's shape leaks nothing (§11). Skip when lone:
+            // the mechanic's own knife (MechanicLoneKill, order 11) already
+            // asked tonight, and "无需行动" would be false.
+            for (const Player& p : state.players) {
+                if (p.isAlive() && p.faction() == Faction::Wolf && p.id() != owner.id()) {
+                    provider.notifyPlayer(owner.id(), txt::mechanicNoNightAction());
+                    return;
+                }
+            }
+            return;
+        }
+        default:
+            // 通灵/女巫/守卫: their own learned components deliver the touch.
+            return;
     }
-    provider.onMechanicGunCheck(owner.id(), canShoot);
 }
 
 void MechanicLearnedShoot::onDeath(GameState& state, Player& owner, DecisionProvider& provider,
                                    std::vector<PendingDeath>& out) {
-    if (state.mechanicLearned != RoleKind::Hunter) return;
+    // Fail closed: no learn day recorded -> treat as not yet effective. The two
+    // fields are always set together in MechanicLearn, but this gate must never
+    // default to "shoot" if that invariant slips.
+    if (state.mechanicLearned != RoleKind::Hunter || !state.mechanicLearnDay) return;
     // §2 生效时机: the learned shot is live from the DAY after the learning night,
     // judged by the death STAMP, not the announcement moment — a night death keeps
     // its (day, Night) stamp even when announced the next morning (§5.2/§7.2). So
     // a death during the learning night itself never shoots, while an exile (or
     // self-destruct) the very next day reaches the normal blocked-cause check.
-    if (state.mechanicLearnDay && owner.deathDay() == *state.mechanicLearnDay &&
-        owner.deathPhase() == Phase::Night) {
+    if (owner.deathDay() == *state.mechanicLearnDay && owner.deathPhase() == Phase::Night) {
         return;
     }
     // A blocked death cause forbids the shot (§2, board-configurable: 毒 + 自爆).

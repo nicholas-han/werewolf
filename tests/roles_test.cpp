@@ -71,6 +71,46 @@ TEST(Witch, PoisonMarksTarget) {
     EXPECT_FALSE(s.witchPoisonAvailable);
 }
 
+TEST(Witch, UniformFlowNoticesNeverGoSilent) {
+    // §2/§11: with the antidote unused, a knife-less night is an explicit
+    // 无人被刀 (never silence); with both potions gone she still gets one neutral
+    // touch per night — the flow's shape must not encode hidden state.
+    {   // Antidote in hand, 空刀 -> explicit notice, no save ask consumed.
+        GameState s = board9State();
+        WitchPotions witch(WitchSelfRescue::Never, /*bothPotionsSameNight=*/false);
+        NightContext ctx;  // no knife
+        ScriptedDecisionProvider dp;
+        witch.actAtNight(ctx, s, *s.find(5), dp);
+        ASSERT_FALSE(dp.events.empty());
+        EXPECT_EQ(dp.events.front(), txt::witchNoKnife());
+    }
+    {   // Both potions spent -> neutral touch instead of silence.
+        GameState s = board9State();
+        s.witchAntidoteAvailable = false;
+        s.witchPoisonAvailable = false;
+        WitchPotions witch(WitchSelfRescue::Never, /*bothPotionsSameNight=*/false);
+        NightContext ctx;
+        ctx.wolvesActed = true;
+        ctx.wolfTarget = 7;  // a knife exists, but she must not learn it (§2 死讯可见性)
+        ScriptedDecisionProvider dp;
+        witch.actAtNight(ctx, s, *s.find(5), dp);
+        ASSERT_EQ(dp.events.size(), 1u);
+        EXPECT_EQ(dp.events.back(), txt::witchNoPotionsLeft());
+    }
+    {   // Spending the LAST potion tonight does not trigger the no-potion notice —
+        // entry-state governs the uniform-flow messages.
+        GameState s = board9State();
+        s.witchAntidoteAvailable = false;  // antidote long gone, poison in hand
+        WitchPotions witch(WitchSelfRescue::Never, /*bothPotionsSameNight=*/false);
+        NightContext ctx;
+        ScriptedDecisionProvider dp;
+        dp.witchPoisons = {8};
+        witch.actAtNight(ctx, s, *s.find(5), dp);
+        EXPECT_FALSE(s.witchPoisonAvailable);  // spent tonight
+        EXPECT_TRUE(dp.events.empty());        // and no contradictory notice
+    }
+}
+
 TEST(Witch, OnePotionPerNight_SaveBlocksPoison) {
     GameState s = board9State();
     WitchPotions witch(WitchSelfRescue::Never, /*bothPotionsSameNight=*/false);

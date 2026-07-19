@@ -208,9 +208,8 @@ void RoutingDecisionProvider::onHunterGunCheck(int hunterId, bool canShoot) {
 }
 
 void RoutingDecisionProvider::onMechanicGunCheck(int mechanicId, bool canShoot) {
-    // No reason attached: 不可开枪 may be 学习当晚未生效 or 带毒 — the mechanic can tell.
     if (PlayerChannel* p = ch(mechanicId)) {
-        p->tell(std::string("【验枪】当前") + (canShoot ? "可开枪" : "不可开枪"));
+        p->tell("【验枪】" + txt::gunCheckStatus(canShoot));
     }
 }
 
@@ -220,10 +219,7 @@ void RoutingDecisionProvider::onMechanicLearnResult(int mechanicId, int targetId
     if (PlayerChannel* p = ch(mechanicId)) {
         std::string msg = "【学习结果】你学习了 #" + std::to_string(targetId) +
                           "，学到的身份是 " + txt::role(learnedRole);
-        if (stock) {
-            msg += "（药水副本：解药×" + std::to_string(stock->antidote ? 1 : 0) + "、毒药×" +
-                   std::to_string(stock->poison ? 1 : 0) + "）";
-        }
+        if (stock) msg += txt::mechanicWitchStock(stock->antidote, stock->poison);
         p->tell(msg);
     }
 }

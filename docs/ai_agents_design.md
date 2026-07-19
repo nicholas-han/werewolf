@@ -198,7 +198,7 @@ JSON-lines（每行一个 JSON 对象，UTF-8，`\n` 分隔）。引擎与 orche
 | `speech` | public/private | 某座位的发言（WolfChat 为 private 狼队） | `{speaker:3, kind:"Statement"}` |
 | `death` | public | 公布死讯 | `{dead:[7], causes:{7:["Killed"]}}` |
 | `vote` | public | 计票结果 | `{tally:{5:3,7:2}, exiled:5}` |
-| `result_private` | private | 私密技能结果（查验/通灵/验枪/被刀通知） | `{kind:"Inspect", target:5, isWolf:false}` |
+| `result_private` | private | 私密技能结果（查验/通灵/验枪/机械验枪/学习结果/被刀通知） | `{kind:"Inspect", target:5, isWolf:false}`；kind 全集见 protocol_v1 §6.3（含 `MechanicGunCheck`、`Learn` 学女巫附 `antidote`/`poison`） |
 | `decision` | moderator | 上帝记录：某座位的秘密决策 | `{seat:4, kind:"NightKill", target:7}` |
 | `status` | moderator | 法官状态面板（全员身份/存活/药剂） | `{...}` |
 
@@ -414,7 +414,7 @@ AgentBrain(seat, role_info, persona, llm: LlmClient):
   2. **自己历次发言**（白天发言、竞选发言、遗言）——自己的发言经 public `speech` 事件回流，天然进 view；
   3. **所有能听到的他人发言**（含真人）——来自 public `speech` 事件；
   4. **狼队夜间私聊**（仅当自己是狼）——来自 private `speech kind=WolfChat` 事件；
-  5. **自己的私密技能结果**：查验/通灵/验枪/被刀通知/学习结果——来自 private `result_private` 事件；
+  5. **自己的私密技能结果**：查验/通灵/验枪（真猎人 `GunCheck` / 机械狼 `MechanicGunCheck`）/被刀通知/学习结果（学女巫附药水副本 `antidote`/`poison`）——来自 private `result_private` 事件；
   6. **公共事件**：死讯、计票、警长流程、阶段横幅——来自 public 事件。
   即 §3 的「全部 public 事件 ∪ seat==自己的 private 事件」，**全程累积、不丢**。
 - **心里话 vs 公开发言分离**：`reasoning`（含 R1 的 `<think>`，§7.5）只进 trace + 自己的记忆，**绝不广播**；只有 `speak` 的 `text` 才经引擎广播。这正是狼人杀「内心/明面」的天然分裂，也是最值钱的训练信号。

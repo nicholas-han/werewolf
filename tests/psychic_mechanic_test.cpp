@@ -9,6 +9,7 @@
 #include "core/board.h"
 #include "core/enums.h"
 #include "core/game_state.h"
+#include "core/messages.h"
 #include "core/player.h"
 #include "flow/game.h"
 #include "flow/win_condition.h"
@@ -186,7 +187,7 @@ TEST(WinCondition, MechanicNotCountedForVoteBinding) {
 
 TEST(HunterGunCheck, ReflectsTonightsPoison) {
     GameState s = buildInitialState(makeBoard9_SeerWitchHunter());  // hunter is seat 6
-    HunterGunCheck gc;
+    HunterGunCheck gc(PoisonReflect::ReflectToPoisoner, /*poisonBlocksShot=*/true);
     ScriptedDecisionProvider dp;
 
     NightContext clean;  // nobody poisoned -> can shoot
@@ -204,7 +205,7 @@ TEST(HunterGunCheck, MechanicWitchPoisonAlsoBlocksShot) {
     // §2/§3: the gun-check must also see the mechanic's learned-witch poison (it now
     // runs after the mechanic acts). hunter = seat 7 on the psychic board.
     GameState s = psychicBoard();
-    HunterGunCheck gc;
+    HunterGunCheck gc(PoisonReflect::ReflectToPoisoner, /*poisonBlocksShot=*/true);
     ScriptedDecisionProvider dp;
 
     NightContext mechPoison;
@@ -228,7 +229,7 @@ TEST(HunterGunCheck, NoneModeGuardDoesNotSaveFromPoison) {
     // guarded-but-poisoned hunter still dies and cannot shoot — the gun-check must
     // mirror the None dawn rule (the opposite of the reflect case above).
     GameState s = psychicBoard();
-    HunterGunCheck gc(PoisonReflect::None);
+    HunterGunCheck gc(PoisonReflect::None, /*poisonBlocksShot=*/true);
     ScriptedDecisionProvider dp;
 
     NightContext guardedButNone;
@@ -296,7 +297,7 @@ TEST(MechanicLearned, GunCheckLearnNightNoThenMirrorsPoison) {
     // §2 每晚验枪 (mechanic flavor): the learning night is always 不可开枪 (the
     // shot goes live the next day); later nights mirror the hunter's poison rule.
     GameState s = psychicBoard();
-    MechanicLearnedGunCheck gc;
+    MechanicLearnedNightStatus gc(/*poisonBlocksShot=*/true);
     ScriptedDecisionProvider dp;
     s.mechanicLearned = RoleKind::Hunter;
     s.mechanicLearnDay = 1;
@@ -311,32 +312,104 @@ TEST(MechanicLearned, GunCheckLearnNightNoThenMirrorsPoison) {
     s.day = 2;  // later night, no poison -> can shoot
     NightContext ctx2;
     gc.actAtNight(ctx2, s, *s.find(4), dp);
+    ASSERT_EQ(dp.mechanicGunChecks.size(), 2u);
     EXPECT_TRUE(dp.mechanicGunChecks.back().second);
 
     NightContext ctx3;  // later night, the real witch poisons the mechanic -> no
     ctx3.poisonTarget = 4;
     gc.actAtNight(ctx3, s, *s.find(4), dp);
+    ASSERT_EQ(dp.mechanicGunChecks.size(), 3u);
     EXPECT_FALSE(dp.mechanicGunChecks.back().second);
 
     // Board where poison does NOT block the learned shot -> gesture stays yes.
-    MechanicLearnedGunCheck gcNoBlock(/*poisonBlocksShot=*/false);
+    MechanicLearnedNightStatus gcNoBlock(/*poisonBlocksShot=*/false);
     NightContext ctx4;
     ctx4.poisonTarget = 4;
     gcNoBlock.actAtNight(ctx4, s, *s.find(4), dp);
+    ASSERT_EQ(dp.mechanicGunChecks.size(), 4u);
     EXPECT_TRUE(dp.mechanicGunChecks.back().second);
 }
 
-TEST(MechanicLearned, GunCheckSilentUnlessLearnedHunter) {
+TEST(MechanicLearned, NightStatusSilentForRolesWithTheirOwnAsks) {
     GameState s = psychicBoard();
-    MechanicLearnedGunCheck gc;
+    MechanicLearnedNightStatus gc(/*poisonBlocksShot=*/true);
     ScriptedDecisionProvider dp;
     NightContext ctx;
-    gc.actAtNight(ctx, s, *s.find(4), dp);  // nothing learned
-    s.mechanicLearned = RoleKind::Witch;    // learned, but not the hunter
+    gc.actAtNight(ctx, s, *s.find(4), dp);  // nothing learned -> silent
+    s.mechanicLearned = RoleKind::Witch;    // learned witch: its own component touches
     s.mechanicLearnDay = 1;
     s.day = 2;
     gc.actAtNight(ctx, s, *s.find(4), dp);
     EXPECT_TRUE(dp.mechanicGunChecks.empty());
+    EXPECT_TRUE(dp.events.empty());
+}
+
+TEST(MechanicLearned, NightStatusNeutralTouchForCivilianAndWolf) {
+    // §11: a mechanic that learned 平民/狼人 has no nightly ask — it still gets one
+    // private touch per night, so the visible flow cannot partition learned roles.
+    GameState s = psychicBoard();
+    MechanicLearnedNightStatus gc(/*poisonBlocksShot=*/true);
+    ScriptedDecisionProvider dp;
+    s.mechanicLearned = RoleKind::Civilian;
+    s.mechanicLearnDay = 1;
+    s.day = 1;  // fires from the learning night onward
+    NightContext ctx;
+    gc.actAtNight(ctx, s, *s.find(4), dp);
+    ASSERT_EQ(dp.events.size(), 1u);
+    EXPECT_EQ(dp.events.back(), txt::mechanicNoNightAction());
+    EXPECT_TRUE(dp.mechanicGunChecks.empty());  // not a gun gesture
+
+    s.mechanicLearned = RoleKind::Werewolf;
+    s.day = 2;
+    gc.actAtNight(ctx, s, *s.find(4), dp);
+    EXPECT_EQ(dp.events.size(), 2u);
+
+    // Lone mechanic: its own knife (MechanicLoneKill) already asks tonight, so
+    // the neutral notice is skipped — no double touch, no false "无需行动".
+    for (int w : {1, 2, 3}) s.find(w)->recordDeath(DeathCause::Exiled, 2, Phase::Day);
+    gc.actAtNight(ctx, s, *s.find(4), dp);
+    EXPECT_EQ(dp.events.size(), 2u);  // unchanged
+}
+
+TEST(MechanicLearned, ShotFailsClosedWithoutLearnDay) {
+    // The learn day is always recorded with the learned role, but if that invariant
+    // ever slips the gate must block the shot, not skip itself.
+    GameState s = psychicBoard();
+    MechanicLearnedShoot shoot;
+    ScriptedDecisionProvider dp;
+    s.mechanicLearned = RoleKind::Hunter;  // learnDay deliberately unset
+    Player& mech = *s.find(4);
+    mech.recordDeath(DeathCause::Exiled, 1, Phase::Day);
+    s.day = 1;
+    dp.hunterShots = {1};
+    std::vector<PendingDeath> out;
+    shoot.onDeath(s, mech, dp, out);
+    EXPECT_TRUE(out.empty());
+}
+
+TEST(MechanicLearned, WitchUniformFlowNotices) {
+    // §2/§11 uniform flow, learned-witch flavor: antidote in hand + 空刀 -> explicit
+    // 无人被刀; both copied potions gone -> a neutral nightly touch, never silence.
+    GameState s = psychicBoard();
+    MechanicLearnedWitch mw(/*bothPotionsSameNight=*/false);
+    ScriptedDecisionProvider dp;
+    s.mechanicLearned = RoleKind::Witch;
+    s.mechanicLearnDay = 1;
+    s.day = 2;
+
+    s.mechanicAntidoteAvailable = true;
+    s.mechanicPoisonAvailable = true;
+    NightContext noKnife;  // 空刀 night
+    mw.actAtNight(noKnife, s, *s.find(4), dp);
+    ASSERT_EQ(dp.events.size(), 1u);
+    EXPECT_EQ(dp.events.back(), txt::witchNoKnife());
+
+    s.mechanicAntidoteAvailable = false;
+    s.mechanicPoisonAvailable = false;
+    NightContext spent;
+    mw.actAtNight(spent, s, *s.find(4), dp);
+    ASSERT_EQ(dp.events.size(), 2u);
+    EXPECT_EQ(dp.events.back(), txt::witchNoPotionsLeft());
 }
 
 TEST(Game, LearnedHunterShootsWhenExiledTheNextDay) {

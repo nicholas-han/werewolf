@@ -109,6 +109,35 @@ TEST(Paidao, HunterShotDefeatsTheLine) {
     EXPECT_FALSE(paidaoSucceeds(board, s, line));
 }
 
+TEST(Paidao, WolfSideLearnedShotDoesNotConsumeGoodShots) {
+    // §4.4: `hunterShots` models the GOOD side's declared shots. A wolf-side death
+    // trigger (here the mechanic's learned hunter, killed by its own team's blast)
+    // must not pop that queue — wolf shooters don't shoot in the sandbox at all
+    // (PaidaoLine has no field for the wolves' own reactive shots).
+    // Enough town that the game is still ONGOING when the mechanic dies — the win
+    // check runs before death triggers (§4.2), so a smaller board would end at
+    // parity first and never exercise the trigger.
+    Board board = killAllBoard({{RoleKind::Werewolf, 2},
+                                {RoleKind::MechanicWolf, 1},
+                                {RoleKind::Hunter, 1},
+                                {RoleKind::Civilian, 2}});
+    GameState s = buildInitialState(board);  // 1,2 wolf; 3 mechanic; 4 hunter; 5,6 civ
+    s.mechanicLearned = RoleKind::Hunter;    // learned the hunter on night 1
+    s.mechanicLearnDay = 1;
+    s.day = 2;
+
+    PaidaoLine line;
+    line.steps = {PaidaoStep{/*wolf=*/1, /*knife=*/3}};  // blast takes the mechanic
+    line.hunterShots = {2};  // good's declaration for ITS hunter — not the mechanic's
+
+    // Correct: the mechanic's trigger fires but no wolf-side shot happens -> the
+    // line leaves 1 wolf vs 3 town -> Ongoing (拍刀 fails). With the bug the
+    // mechanic pops the good entry and shoots wolf 2 -> all wolves dead -> the
+    // verdict flips to TownWins.
+    EXPECT_EQ(simulatePaidaoLine(board, s, line), GameResult::Ongoing);
+    EXPECT_FALSE(paidaoSucceeds(board, s, line));
+}
+
 TEST(Paidao, WitchAntidoteDefeatsTheLine) {
     // 2 wolves + witch + 1 civilian (KillAll). Wolf takes the civilian; without a
     // save it'd be parity (wolf win), but the witch antidotes the target -> the

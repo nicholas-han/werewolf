@@ -112,6 +112,22 @@ inline std::string badgeLostTie() { return "竞选平票，警徽流失，本局
 inline std::string badgeTransferred(const std::string& name) { return "警徽移交给 " + name; }
 inline std::string badgeDestroyed() { return "警徽被撕毁，本局不再有警长"; }
 
+// --- Private night notices (§2/§11 uniform flow) ---
+// The witch-flavored notices are shared by the real witch and the mechanic's
+// learned witch; the mechanic knows it is acting as the witch.
+inline std::string witchNoKnife() { return "【女巫】今晚无人被刀"; }
+inline std::string witchNoPotionsLeft() { return "【女巫】你已无药水，今晚无需行动"; }
+inline std::string mechanicNoNightAction() { return "【机械狼】今晚无需行动"; }
+// Potion copy reported with the mechanic's learn result (§2 学习女巫).
+inline std::string mechanicWitchStock(bool antidote, bool poison) {
+    return "（药水副本：解药×" + std::to_string(antidote ? 1 : 0) + "、毒药×" +
+           std::to_string(poison ? 1 : 0) + "）";
+}
+// Gun-status gesture without a reason (§11): 不可开枪 may be 学习当晚未生效 or 带毒.
+inline std::string gunCheckStatus(bool canShoot) {
+    return std::string("当前") + (canShoot ? "可开枪" : "不可开枪");
+}
+
 // --- Result ---
 inline std::string resultTown() { return "游戏结束：好人胜利"; }
 inline std::string resultWolf() { return "游戏结束：狼人胜利"; }

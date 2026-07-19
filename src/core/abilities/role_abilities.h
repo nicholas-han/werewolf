@@ -159,20 +159,27 @@ private:
     bool allowConsecutive_;
 };
 
-// Learned 猎人: nightly private gun-status gesture (§2 每晚验枪, mechanic flavor).
-// Runs inside the mechanic's own night block right after MechanicLearn, so the
-// learning night itself gets an immediate status — always 不可开枪 that night
-// (the learned shot is live from the next DAY, §2 生效时机). Later nights mirror
-// the real hunter's poison rule; only the real witch's poison can apply (the
-// mech-witch/mech-guard would require a different learned role).
-class MechanicLearnedGunCheck : public Ability, public NightActor {
+// The mechanic's nightly private status touch after learning (§2/§11). Runs
+// inside the mechanic's own night block right after MechanicLearn, so the
+// learning night itself gets an immediate status. Two jobs:
+//  - Learned 猎人: gun-status gesture (§2 每晚验枪, mechanic flavor) — always
+//    不可开枪 on the learning night (the shot is live from the next DAY, §2
+//    生效时机); later nights mirror the real hunter's poison rule (only the
+//    real witch's poison can apply — the mech-witch is this very player).
+//  - Learned 平民/狼人 (no nightly learned ask): a neutral "今晚无需行动"
+//    notice, so every learned role produces exactly one private touch per
+//    night and the visible flow (e.g. pass-and-play device hand-offs) cannot
+//    partition the learned roles (§11). Roles with nightly asks (通灵/女巫/
+//    守卫) are touched by their own components instead.
+class MechanicLearnedNightStatus : public Ability, public NightActor {
 public:
     // `poisonBlocksShot`: whether Poisoned is among learnedHunterShotBlockedBy —
     // when the board lets a poisoned (mechanic) hunter shoot, the gesture is
-    // always 可开枪 past the learning night.
-    explicit MechanicLearnedGunCheck(bool poisonBlocksShot = true)
+    // always 可开枪 past the learning night. No default: every construction
+    // site must state the board's intent or the gesture drifts from the rule.
+    explicit MechanicLearnedNightStatus(bool poisonBlocksShot)
         : poisonBlocksShot_(poisonBlocksShot) {}
-    std::string name() const override { return "MechanicLearnedGunCheck"; }
+    std::string name() const override { return "MechanicLearnedNightStatus"; }
     int nightOrder() const override { return 40; }  // mechanic block: after learn(38)
     std::string nightCue() const override { return "机械狼"; }
     void actAtNight(NightContext& ctx, GameState& state, Player& owner,
@@ -209,9 +216,9 @@ public:
     //    him from poison (and so lets him shoot).
     //  - `poisonBlocksShot` (§2): whether poison forbids the shot at all; false when
     //    the board's hunter.shotBlockedBy omits Poisoned (poisoned hunter may shoot).
-    // Both default to the canonical rules; moot on boards with no mechanic/poison.
-    explicit HunterGunCheck(PoisonReflect poisonReflect = PoisonReflect::ReflectToPoisoner,
-                            bool poisonBlocksShot = true)
+    // No defaults: every construction site must state the board's intent or the
+    // gesture silently drifts from the real shot rule.
+    HunterGunCheck(PoisonReflect poisonReflect, bool poisonBlocksShot)
         : poisonReflect_(poisonReflect), poisonBlocksShot_(poisonBlocksShot) {}
 
     std::string name() const override { return "HunterGunCheck"; }

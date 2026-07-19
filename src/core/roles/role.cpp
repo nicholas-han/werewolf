@@ -65,7 +65,8 @@ std::unique_ptr<Role> makeRole(RoleKind kind, const BoardConfig& config) {
             const std::vector<DeathCause>& mblocked = config.mechanic.learnedHunterShotBlockedBy;
             const bool mPoisonBlocks =
                 std::find(mblocked.begin(), mblocked.end(), DeathCause::Poisoned) != mblocked.end();
-            r->addAbility(std::make_unique<MechanicLearnedGunCheck>(mPoisonBlocks));  // 每晚验枪
+            // Nightly status touch: 学猎人 -> 验枪; 学平民/狼 -> neutral (§11).
+            r->addAbility(std::make_unique<MechanicLearnedNightStatus>(mPoisonBlocks));
             r->addAbility(std::make_unique<MechanicLearnedShoot>(mblocked));
             return r;
         }

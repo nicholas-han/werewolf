@@ -200,7 +200,8 @@ speak 的 `kind`（`SpeechKind`）：`Statement`（白天发言；竞选发言�
 ```jsonc
 { "kind":"Inspect",  "target":5, "isWolf":false }                 // 预言家查验
 { "kind":"Psychic",  "target":5, "shownRole":"Witch" }            // 通灵（机械狼按伪装）
-{ "kind":"GunCheck", "canShoot":true }                            // 猎人每晚验枪；机械狼学得猎人后同样每晚收到（seat=机械狼，学习当晚恒 false——开枪自次日白天起持有）
+{ "kind":"GunCheck", "canShoot":true }                            // 猎人每晚验枪
+{ "kind":"MechanicGunCheck", "canShoot":false }                   // 机械狼学得猎人后的每晚验枪（独立 kind，勿与猎人混淆；学习当晚恒 false——开枪自次日白天起持有）
 { "kind":"Learn",    "target":5, "learnedRole":"Guardian" }       // 机械狼学习结果
 { "kind":"Learn",    "target":6, "learnedRole":"Witch",
   "antidote":true, "poison":false }                               // 学女巫附药水副本（学习当刻剩余；仅 learnedRole=Witch 时有这两个字段）

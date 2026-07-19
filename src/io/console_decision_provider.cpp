@@ -252,9 +252,7 @@ void ConsoleDecisionProvider::onHunterGunCheck(int hunterId, bool canShoot) {
 }
 
 void ConsoleDecisionProvider::onMechanicGunCheck(int mechanicId, bool canShoot) {
-    // No reason attached: 不可开枪 may be 学习当晚未生效 or 带毒 — the mechanic can tell.
-    out_ << "【私密→机械狼 #" << mechanicId << "】当前"
-         << (canShoot ? "可开枪" : "不可开枪") << "\n";
+    out_ << "【私密→机械狼 #" << mechanicId << "】" << txt::gunCheckStatus(canShoot) << "\n";
 }
 
 void ConsoleDecisionProvider::onMechanicLearnResult(int mechanicId, int targetId,
@@ -262,10 +260,7 @@ void ConsoleDecisionProvider::onMechanicLearnResult(int mechanicId, int targetId
                                                     const std::optional<MechanicWitchStock>& stock) {
     out_ << "【私密→机械狼 #" << mechanicId << "】你学习了 #" << targetId << "，学到的身份是 "
          << txt::role(learnedRole);
-    if (stock) {
-        out_ << "（药水副本：解药×" << (stock->antidote ? 1 : 0) << "、毒药×"
-             << (stock->poison ? 1 : 0) << "）";
-    }
+    if (stock) out_ << txt::mechanicWitchStock(stock->antidote, stock->poison);
     out_ << "\n";
 }
 
