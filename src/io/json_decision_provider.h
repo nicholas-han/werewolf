@@ -70,7 +70,9 @@ public:
     void onInspectResult(int seerId, int targetId, bool isWolf) override;
     void onPsychicResult(int psychicId, int targetId, RoleKind shownRole) override;
     void onHunterGunCheck(int hunterId, bool canShoot) override;
-    void onMechanicLearnResult(int mechanicId, int targetId, RoleKind learnedRole) override;
+    void onMechanicGunCheck(int mechanicId, bool canShoot) override;
+    void onMechanicLearnResult(int mechanicId, int targetId, RoleKind learnedRole,
+                               const std::optional<MechanicWitchStock>& stock) override;
 
     void notify(const std::string& message) override;
     void notifyPlayer(int playerId, const std::string& message) override;

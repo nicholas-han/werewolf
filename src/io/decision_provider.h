@@ -28,6 +28,16 @@ struct SheriffBallot {
 // the next-higher seat (wrapping), Right = toward the next-lower seat.
 enum class SpeechDirection { Left, Right };
 
+// Potion copy the MechanicWolf received on learning the witch (BRD §2 学习女巫):
+// the witch's stock at the moment of learning — potions already spent (tonight
+// included) are not copied. Delivered with the learn result because the player
+// cannot infer it from the flow (the moderator's asks must not vary with hidden
+// state, §11).
+struct MechanicWitchStock {
+    bool antidote = false;
+    bool poison = false;
+};
+
 class DecisionProvider {
 public:
     virtual ~DecisionProvider() = default;
@@ -154,10 +164,20 @@ public:
         (void)hunterId; (void)canShoot;
     }
 
+    // Nightly private gesture to the MechanicWolf that learned the hunter (BRD §2):
+    // whether its learned shot is currently available. Delivered from the learning
+    // night itself (always "no" that night — the shot is live from the next day);
+    // afterwards mirrors the hunter's poison rule. Informational only.
+    virtual void onMechanicGunCheck(int mechanicId, bool canShoot) {
+        (void)mechanicId; (void)canShoot;
+    }
+
     // Directed result delivered privately to the MechanicWolf right after it learns
-    // a player's identity (BRD §2/§11): the exact role it just acquired.
-    virtual void onMechanicLearnResult(int mechanicId, int targetId, RoleKind learnedRole) {
-        (void)mechanicId; (void)targetId; (void)learnedRole;
+    // a player's identity (BRD §2/§11): the exact role it just acquired, plus the
+    // copied potion stock when that role is the witch (nullopt otherwise).
+    virtual void onMechanicLearnResult(int mechanicId, int targetId, RoleKind learnedRole,
+                                       const std::optional<MechanicWitchStock>& stock) {
+        (void)mechanicId; (void)targetId; (void)learnedRole; (void)stock;
     }
 
     // Speech capture (BRD roadmap §4 发言记录): collect `speakerId`'s spoken words

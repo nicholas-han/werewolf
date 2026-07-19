@@ -10,6 +10,27 @@
 
 namespace ww {
 
+namespace {
+
+// Good-side reaction provider for the sandbox (§4.4): `hunterShots` models the
+// GOOD side's declared shots only. Wolf-side death triggers also route through
+// chooseHunterShot (the mechanic's learned hunter, the wolf-gun) — they must NOT
+// consume the good side's queue, and PaidaoLine has no field for the wolves'
+// own reactive shots, so wolf shooters simply don't shoot in the sandbox. That
+// is conservative in the right direction: a suppressed wolf shot only removes a
+// wolf advantage, so a line judged a WolfWin here would also win with the shot.
+class GoodReactionProvider : public ScriptedDecisionProvider {
+public:
+    std::optional<int> chooseHunterShot(const GameState& state, int shooterId,
+                                        const std::vector<int>& candidates) override {
+        const Player* shooter = state.find(shooterId);
+        if (shooter == nullptr || shooter->faction() != Faction::Town) return std::nullopt;
+        return ScriptedDecisionProvider::chooseHunterShot(state, shooterId, candidates);
+    }
+};
+
+}  // namespace
+
 GameState sandboxClone(const Board& board, const GameState& live) {
     std::vector<RoleKind> seatRoles;
     seatRoles.reserve(live.players.size());
@@ -24,7 +45,7 @@ GameResult simulatePaidaoLine(const Board& board, const GameState& live, const P
     GameState sandbox = sandboxClone(board, live);
     sandbox.phase = Phase::Day;  // 拍刀 happens during the day
 
-    ScriptedDecisionProvider good;  // good-side reactions (hunter shots); silent pause
+    GoodReactionProvider good;  // good-side reactions (hunter shots); silent pause
     good.hunterShots = line.hunterShots;
     Settlement settle(sandbox, board.config, good);
 

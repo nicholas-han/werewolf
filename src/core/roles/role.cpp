@@ -62,8 +62,12 @@ std::unique_ptr<Role> makeRole(RoleKind kind, const BoardConfig& config) {
             r->addAbility(std::make_unique<MechanicLearnedInspect>());
             r->addAbility(std::make_unique<MechanicLearnedWitch>(config.witchBothPotionsSameNight));
             r->addAbility(std::make_unique<MechanicLearnedProtect>(config.guardConsecutiveSameTarget));
-            r->addAbility(std::make_unique<MechanicLearnedShoot>(
-                config.mechanic.learnedHunterShotBlockedBy));
+            const std::vector<DeathCause>& mblocked = config.mechanic.learnedHunterShotBlockedBy;
+            const bool mPoisonBlocks =
+                std::find(mblocked.begin(), mblocked.end(), DeathCause::Poisoned) != mblocked.end();
+            // Nightly status touch: 学猎人 -> 验枪; 学平民/狼 -> neutral (§11).
+            r->addAbility(std::make_unique<MechanicLearnedNightStatus>(mPoisonBlocks));
+            r->addAbility(std::make_unique<MechanicLearnedShoot>(mblocked));
             return r;
         }
         case RoleKind::Civilian:

@@ -207,11 +207,20 @@ void RoutingDecisionProvider::onHunterGunCheck(int hunterId, bool canShoot) {
     }
 }
 
-void RoutingDecisionProvider::onMechanicLearnResult(int mechanicId, int targetId,
-                                                    RoleKind learnedRole) {
+void RoutingDecisionProvider::onMechanicGunCheck(int mechanicId, bool canShoot) {
     if (PlayerChannel* p = ch(mechanicId)) {
-        p->tell("【学习结果】你学习了 #" + std::to_string(targetId) + "，学到的身份是 " +
-                txt::role(learnedRole));
+        p->tell("【验枪】" + txt::gunCheckStatus(canShoot));
+    }
+}
+
+void RoutingDecisionProvider::onMechanicLearnResult(int mechanicId, int targetId,
+                                                    RoleKind learnedRole,
+                                                    const std::optional<MechanicWitchStock>& stock) {
+    if (PlayerChannel* p = ch(mechanicId)) {
+        std::string msg = "【学习结果】你学习了 #" + std::to_string(targetId) +
+                          "，学到的身份是 " + txt::role(learnedRole);
+        if (stock) msg += txt::mechanicWitchStock(stock->antidote, stock->poison);
+        p->tell(msg);
     }
 }
 

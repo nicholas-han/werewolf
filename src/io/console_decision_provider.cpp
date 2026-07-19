@@ -251,10 +251,17 @@ void ConsoleDecisionProvider::onHunterGunCheck(int hunterId, bool canShoot) {
          << (canShoot ? "可开枪" : "不可开枪（带毒）") << "\n";
 }
 
+void ConsoleDecisionProvider::onMechanicGunCheck(int mechanicId, bool canShoot) {
+    out_ << "【私密→机械狼 #" << mechanicId << "】" << txt::gunCheckStatus(canShoot) << "\n";
+}
+
 void ConsoleDecisionProvider::onMechanicLearnResult(int mechanicId, int targetId,
-                                                    RoleKind learnedRole) {
+                                                    RoleKind learnedRole,
+                                                    const std::optional<MechanicWitchStock>& stock) {
     out_ << "【私密→机械狼 #" << mechanicId << "】你学习了 #" << targetId << "，学到的身份是 "
-         << txt::role(learnedRole) << "\n";
+         << txt::role(learnedRole);
+    if (stock) out_ << txt::mechanicWitchStock(stock->antidote, stock->poison);
+    out_ << "\n";
 }
 
 void ConsoleDecisionProvider::notify(const std::string& message) {
