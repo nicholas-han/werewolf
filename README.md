@@ -13,6 +13,7 @@
 - **按玩家路由地基**：`PlayerChannel` + `RoutingDecisionProvider` 把引擎的单一决策接口拆成「每玩家一条通道」，公共/私密/法官全知三类信息分流（§11）。这是真·联机与 AI agent 玩家的共同地基——各自只是不同的通道实现。
 - **发言记录与复盘**（可选开关）：按发言顺序记录每人白天发言 + 出局者遗言，结束后按天分组打印复盘记录。
 - **拍刀沙盒**（§4.4，进行中）：可回滚 `GameState` + 指定线推演（阶段 A/B 完成；好人最优自动搜索阶段 C 暂缓）。
+- **DSH Web 面板（插件）**：仓库同时是一个可安装的 DeepSeek Harness bundle `@local/dsh-plugin-werewolf`。侧边栏打开「狼人杀」即可在 Web UI 里入座、看夜间视角、发言、投票、复盘；其余座位由内置 AI 接管。C++ 引擎继续通过 JSON-lines 协议作为唯一规则真相层，插件不复制任何规则。
 
 ## 构建与运行
 
@@ -23,6 +24,54 @@ cmake -B build && cmake --build build      # 构建
 ./build/werewolf                           # 启动法官控制台
 ctest --test-dir build --output-on-failure # 跑测试（131 个用例）
 ```
+
+## Web 面板（DSH 插件）
+
+仓库根目录的 `index.js` / `client.js` / `lib/` / `cordis.patch.yml` 构成一个原生 DSH 插件；完整设计与信息隔离说明见 [`docs/web_panel.md`](docs/web_panel.md)。
+
+- **开局面板**：选 9 人预女猎 / 12 人预女猎守+狼枪 / 12 人通灵机械狼，选自己的座位或「AI 观战」，选 AI 节奏（悠闲 / 正常 / 极速）。
+- **牌桌**：圆形座位、存活/出局、警徽、当前发言者、你的身份牌、狼队友、私密情报（查验/通灵/学习/验枪）。
+- **轮到你时**：右侧操作卡支持 `choose`（候选人 / 弃票）、`confirm`（是/否，按语义换文案）、`speak`（发言 / 遗言 / 狼队私聊），也可以点「让 AI 代打本步」。
+- **对局记录**：按天分段的法官叙述、公开发言、私密结果、计票与终局上帝决策；可筛选发言/法官/私密/上帝。
+- **终局**：好人或狼人胜利、全员身份揭晓、完整复盘；可再来一局。
+- **智能体工具**：`werewolf` 工具可读牌桌、开局、在轮到你时 `reply`，或 `auto` 让 AI 代打。未终局时工具和面板一样看不到其他座位的身份（观战上帝视角除外）。
+
+### 界面预览
+
+![开局大厅](docs/images/werewolf-lobby.png)
+
+![牌桌与夜间操作](docs/images/werewolf-table.png)
+
+### 安装（本机 profile）
+
+插件没有 npm 运行时依赖，安装就是把这个仓库 link 进当前 DSH profile：
+
+```bash
+# 在 ~/.dsh/profiles/desktop/package.json 的 dsh.profile.bundles 与 dependencies 中加入
+#   "@local/dsh-plugin-werewolf": "link:<本仓库绝对路径>"
+# （本机当前已 link 到 /Users/nhan_server/git/werewolf）
+# 然后在 profile 目录安装并重启 DSH
+pnpm install
+```
+
+首次打开面板时，若 `build/werewolf` 不存在或比 C++ 源文件旧，插件会用系统 `c++` 自动编译一次（无需 CMake）。也可以手动构建：
+
+```bash
+npm run build:engine       # 直接调用 c++/clang++/g++ 编译 build/werewolf
+npm test                   # 引擎构建 + 插件单元/端到端测试（node:test）
+```
+
+如果已有其他位置的引擎二进制，设 `WEREWOLF_ENGINE=/path/to/werewolf` 即可优先使用。
+
+### 插件结构
+
+- `index.js` — DSH host 入口：`/werewolf/state`、`/werewolf/action` 路由、生命周期、工具注册。
+- `client.js` — 浏览器面板：大厅、圆形牌桌、身份牌、操作卡、对局记录、终局复盘。
+- `lib/engine.js` — 定位/自动编译 C++ 引擎，按协议启动子进程。
+- `lib/game.js` — JS 编排器：事件路由、按座位信息隔离、人类 ask/reply、终局投影。
+- `lib/brain.js` — 座位本地视角的启发式 AI（夜间技能、发言、投票、警长、狼队协作）。
+- `lib/runtime.js` — 单局生命周期、设置持久化、面板/工具共用 API。
+- `lib/tools.js` — `werewolf` 智能体工具。
 
 ## 怎么用（法官视角）
 
@@ -41,6 +90,7 @@ ctest --test-dir build --output-on-failure # 跑测试（131 个用例）
 - `flow/` — `Game`（夜/昼/竞选编排）、`Settlement`（死亡结算核心，真实对局与沙盒共用）、`WinCondition`、`transcript`（发言复盘）、`paidao`（拍刀沙盒）等。
 - `io/` — `DecisionProvider` 接口 + `Scripted`（测试）/ `Console`（真人）/ `PassAndPlay`（单设备多人）实现；以及按玩家路由：`PlayerChannel`（每玩家通道）+ `RoutingDecisionProvider`，通道实现 `Scripted`/`Bot`（真·联机的 `Network`、AI 的 `Agent` 留待后续）。
 - `app/` — `main.cpp` 命令行入口。
+- `index.js` / `client.js` / `lib/` — DSH Web 面板插件（详见上一节）；规则仍只在 C++ 引擎里。
 
 设计要点：**角色用「浅继承 + 能力组合」**（加角色≈挑选/新写能力再拼装）；**胜负按阵营全局计数**；**信息可见性**严格区分「真相层 GameState」与「玩家视图」。详见 [`docs/werewolf_business_requirement_document.md`](docs/werewolf_business_requirement_document.md) 第二部分。
 
