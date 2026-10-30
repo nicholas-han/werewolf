@@ -175,6 +175,18 @@ test("a living open wolf still coordinates sheriff registration with its pack", 
   assert.equal(wolf.decideConfirm(ask, { lowestOpenWolfSeat: 3 }), true);
 });
 
+test("the seer's last words only name seats that exist on this board", () => {
+  const seer = brainFor({ seat: 1, role: "Seer" });
+  seer.knownChecks.set(2, { isWolf: false, day: 1 });
+  seer.deaths.push(1);
+  const text = seer.decideSpeak(
+    { kind: "LastWords", qtype: "speak", prompt: "请发表遗言" },
+    { candidates: [2, 3, 4, 5, 6, 7, 8, 9].map((seat) => ({ seat })) },
+  );
+  assert.doesNotMatch(text, /P1[0-2]/);
+  assert.match(text, /好人继续出 P[2-9]/);
+});
+
 test("the seer announces a living checked wolf, not a dead historical one", () => {
   const seer = brainFor({ seat: 1, role: "Seer" });
   seer.knownChecks.set(3, { isWolf: true, day: 1 });
