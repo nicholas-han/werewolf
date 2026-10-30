@@ -129,10 +129,69 @@ test("every choose decision returns a legal candidate or an allowed skip", () =>
           candidates.some((candidate) => candidate.seat === choice),
           `${role}/${kind} returned illegal seat ${choice}`,
         );
-        assert.notEqual(choice, 3, `${role}/${kind} chose itself`);
+        if (kind !== "Guard") {
+          assert.notEqual(choice, 3, `${role}/${kind} chose itself`);
+        }
       }
     }
   }
+});
+
+test("guard can protect itself", () => {
+  const guard = brainFor({ seat: 4, role: "Guardian", faction: "Town" });
+  const choice = guard.decideChoose({
+    kind: "Guard",
+    qtype: "choose",
+    candidates: [{ seat: 4, name: "P4" }],
+    allowSkip: true,
+  });
+  assert.equal(choice, 4);
+});
+
+test("the mechanic wolf's sheriff decision ignores hidden pack seats", () => {
+  const withPack = brainFor({
+    seat: 4,
+    role: "MechanicWolf",
+    faction: "Wolf",
+    teammates: [],
+  });
+  const withoutPack = brainFor({
+    seat: 4,
+    role: "MechanicWolf",
+    faction: "Wolf",
+    teammates: [],
+  });
+  const ask = { kind: "RunForSheriff", qtype: "confirm", prompt: "是否上警？" };
+  assert.equal(
+    withPack.decideConfirm(ask, { lowestOpenWolfSeat: 2 }),
+    withoutPack.decideConfirm(ask, { lowestOpenWolfSeat: null }),
+  );
+});
+
+test("a living open wolf still coordinates sheriff registration with its pack", () => {
+  const wolf = brainFor({ seat: 3, role: "Werewolf", faction: "Wolf", teammates: [2] });
+  const ask = { kind: "RunForSheriff", qtype: "confirm", prompt: "是否上警？" };
+  assert.equal(wolf.decideConfirm(ask, { lowestOpenWolfSeat: 2 }), false);
+  assert.equal(wolf.decideConfirm(ask, { lowestOpenWolfSeat: 3 }), true);
+});
+
+test("the seer announces a living checked wolf, not a dead historical one", () => {
+  const seer = brainFor({ seat: 1, role: "Seer" });
+  seer.knownChecks.set(3, { isWolf: true, day: 1 });
+  seer.knownChecks.set(5, { isWolf: true, day: 2 });
+  seer.observe({
+    vis: "public",
+    etype: "narration",
+    text: "P3 出局",
+    day: 2,
+    phase: "Day",
+  });
+  const text = seer.decideSpeak(
+    { kind: "Statement", qtype: "speak", prompt: "请发言" },
+    { candidates: [{ seat: 2 }, { seat: 5 }, { seat: 6 }] },
+  );
+  assert.match(text, /今天我的票在 P5/);
+  assert.doesNotMatch(text, /今天我的票在 P3/);
 });
 
 test("a later role declaration replaces the earlier claim", () => {
