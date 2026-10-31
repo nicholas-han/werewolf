@@ -85,3 +85,6 @@ games/
 # Personal launch config (templates: .env.example / werewolf.toml.example)
 .env
 werewolf.toml
+
+# Node / DSH plugin
+node_modules/

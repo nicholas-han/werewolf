@@ -1,0 +1,53 @@
+{
+  "name": "@local/dsh-plugin-werewolf",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Werewolf (狼人杀) for DeepSeek Harness: a playable Web UI panel backed by the C++ rules engine, with AI villagers and agent tools.",
+  "type": "module",
+  "main": "./index.js",
+  "icon": "./icon.svg",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json",
+    "./icon": "./icon.svg",
+    "./cordis.patch.yml": "./cordis.patch.yml"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "icon.svg",
+    "lib/*.js",
+    "scripts/*.mjs",
+    "README.md",
+    "LICENSE",
+    "src/**/*.cpp",
+    "src/**/*.h",
+    "CMakeLists.txt",
+    "docs/images/*.png",
+    "docs/web_panel.md"
+  ],
+  "engines": {
+    "node": ">=22.19"
+  },
+  "scripts": {
+    "build:engine": "node scripts/build-engine.mjs",
+    "test": "node scripts/build-engine.mjs && node --test tests/*.test.js"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ]
+    }
+  },
+  "license": "MIT"
+}

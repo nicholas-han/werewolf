@@ -1,0 +1,4 @@
+- insert:
+    - id: werewolf
+      name: '@local/dsh-plugin-werewolf'
+      config: {}
