@@ -2534,22 +2534,10 @@ window.__ModuleLoader__.load({
         "werewolf: panel",
       );
 
-      ctx.effect(
-        () =>
-          ctx.slots.inject("sidebar.panellist", () =>
-            ctx.slots.register(
-              {
-                name: "sidebar.panellist",
-                id: PANEL_ID,
-                order: 14,
-                label: () => t("panel"),
-                locale: NS,
-              },
-              WerewolfIcon,
-            ),
-          ),
-        "werewolf: sidebar entry",
-      );
+      // No dedicated sidebar icon: @local/dsh-plugin-games owns the single
+      // "Games" entry and opens this panel by id. To split Werewolf back out,
+      // restore a sidebar.panellist registration with id PANEL_ID, order 14,
+      // label () => t("panel") and this file's WerewolfIcon.
     }
 
     return { inject: ["slots", "locale"], apply, WerewolfPanel, WerewolfIcon };
